@@ -1,12 +1,17 @@
-# 🔐 typescript Jwt Auth api
+# 🔐 AgriOps api
 
-Production-ready REST API built with **Node.js**, **Express**, and **TypeScript**, featuring JWT authentication, layered architecture, and comprehensive testing (unit, integration, and E2E).
+<p>
+AgriOps Api is a production-ready RESTful API built with <strong>Node.js</strong>, <strong>Express</strong>, and <strong>TypeScript</strong> to manage agricultural inputs, chemical inventory, and operational workflows. 
+
+The system includes JWT authentication, role-based access control, modular layered architecture, validation pipelines, and comprehensive automated testing (unit, integration, and E2E), ensuring security, scalability, and enterprise-level reliability.
+</p>
 
 ---
 
 ## 🚀 Features
 
 - User registration and login with secure password hashing (bcrypt)
+- Users list endpoint
 - JWT-based authentication and authorization
 - Layered architecture for maintainability and scalability
 - Unit, integration, and end-to-end testing with Jest and Supertest
@@ -94,7 +99,11 @@ test/
 }
 ```
 
-### 3. Get user by email (Protected route)
+### 3. Get users (Protected route)
+
+`GET /user`
+
+### 4. Get user by email (Protected route)
 
 `GET /user/:email`
 
