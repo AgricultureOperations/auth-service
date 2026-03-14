@@ -1,9 +1,9 @@
 # 🔐 AgriOps api
 
 <p>
-AgriOps Api is a production-ready RESTful API built with <strong>Node.js</strong>, <strong>Express</strong>, and <strong>TypeScript</strong> to manage agricultural inputs, chemical inventory, and operational workflows. 
+Auth Service is a backend microservice of the <strong>AgricultureOperations platform</strong>, responsible for managing authentication and authorization.
 
-The system includes JWT authentication, role-based access control, modular layered architecture, validation pipelines, and comprehensive automated testing (unit, integration, and E2E), ensuring security, scalability, and enterprise-level reliability.
+The service is built using <strong>Express.js</strong> with <strong>Node.js 24</strong>, and <strong>TypeScript</strong> and follows a <strong>Layered Architecture</strong> approach to ensure clear separation between repositories(data access), services(business logic) and controllers(API Layer). 
 </p>
 
 ---
@@ -11,36 +11,81 @@ The system includes JWT authentication, role-based access control, modular layer
 ## 🚀 Features
 
 - User registration and login with secure password hashing (bcrypt)
+
 - Users list endpoint
+
 - JWT-based authentication and authorization
+
 - Layered architecture for maintainability and scalability
+
 - Unit, integration, and end-to-end testing with Jest and Supertest
+
 - TypeScript strict typing for safer code
+
 - Environment variable configuration with `.env`
+
 - Clean folder structure following best practices
+
+- SQLite persistence layer
+
+- Lightweight database using better-sqlite3
+
+- Docker containerization support
 
 ---
 
 ## 🛠 Tech Stack
 
 - Node.js
+
 - Express
+
 - TypeScript
+
+- Docker
+
+- SQLite
+
+- better-sqlite3
+
 - JSON Web Tokens (JWT)
+
 - bcrypt
+
 - Jest (Unit testing)
+
 - Supertest (Integration & E2E testing)
+
+---
+
+## 🧱 Architecture Overview
+
+The service follows Layered Architecture composed of Controllers, Services, and Repositories. Each layer has a specific responsibility to ensure separation of concerns, maintainability, and testability.
+
+### Layers
+
+- Controller
+  The Controller handles HTTP requests and responses.
+
+- Service
+  The Service contains the business logic of the application.
+
+- Repository
+  The Repository is responsible for data access.
 
 ---
 
 ## 📁 Project Structure
 
 ```bash
+Dockerfile
+.dockerignore
 src/
  ├── controllers/        # Handle HTTP requests and responses
  ├── services/           # Business logic (rules, validations, operations)
  ├── routes/             # Define API endpoints
  ├── middlewares/        # Middleware (authentication, error handling, validation)
+ ├── repositories/       # Data access
  ├── models/             # Data models and types
  ├── data/               # Mock data or database connections
  ├── app.ts              # Express app initialization and middleware setup
@@ -50,6 +95,38 @@ test/
  ├── unit/               # Unit tests for services and utilities
  ├── integration/        # Integration tests for routes and controllers
  └── e2e/                # End-to-end tests simulating full flows
+```
+
+---
+
+## 🔄 Request Flow
+
+```bash
+Client Request
+      │
+      ▼
+Controller (HTTP Layer)
+      │
+      ▼
+Service (Business Logic Layer)
+      │
+      ▼
+Repository (Data Access Layer)
+      │
+      ▼
+SQlite Database
+```
+
+---
+
+## 🗄 Database
+
+The repository uses SQLite as a lightweight embedded database for local development.
+
+Example connection string:
+
+```bash
+Database("database.db");
 ```
 
 ---
@@ -131,7 +208,7 @@ Authorization: Bearer <jwt_token>
 ### 1. Clone the repo:
 
 ```bash
-git clone https://github.com/edwardcruzcruz/typescript-jwt-auth-api.git
+git clone https://github.com/AgricultureOperations/auth-service.git
 ```
 
 ### 2. Install dependencies:
@@ -168,6 +245,31 @@ JWT_SECRET=your_secret_key
 npm run test
 ```
 
+---
+
+## 🐳 Running with Docker
+
+The service can be built and executed as a Docker container.
+
+### Build the image
+
+```bash
+docker build -t auth-service .
+```
+
+### Run the container
+
+```bash
+docker run --env-file .env -d -p 3000:3000 auth-service
+```
+
+The API will be available at:
+```bash
+http://localhost:3000
+```
+
+---
+
 ## 🧠 Design Decisions
 
 - ✅ TypeScript strict mode enabled  
@@ -182,15 +284,17 @@ npm run test
 
 - 📦 CommonJS module system  
 
+- Layeres architecture
+
+- Microservice-ready architecture
+
+- Docker-ready deploynent
+
 ## 🔮 Future Improvements
 
 - 🛑 Global error handling middleware  
 
 - ✅ Input validation (Joi / Zod / express-validator)  
-
-- 🗄️ Persistent database (PostgreSQL / MongoDB)  
-
-- 🐳 Docker support  
 
 - 📘 Swagger API documentation 
 
