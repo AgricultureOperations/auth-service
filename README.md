@@ -32,6 +32,10 @@ The service is built using <strong>Express.js</strong> with <strong>Node.js 24</
 
 - Docker containerization support
 
+- CI/CD pipelines using Github Actions
+
+- Docker Hub as a container image registry
+
 ---
 
 ## 🛠 Tech Stack
@@ -56,6 +60,10 @@ The service is built using <strong>Express.js</strong> with <strong>Node.js 24</
 
 - Supertest (Integration & E2E testing)
 
+- GitHub Actions
+
+- Docker Hub
+
 ---
 
 ## 🧱 Architecture Overview
@@ -78,7 +86,8 @@ The service follows Layered Architecture composed of Controllers, Services, and 
 ## 📁 Project Structure
 
 ```bash
-Dockerfile
+.github/workflows/       # Define CI/CD workflows to automatically build, test and publish the container image to a container register automatically 
+Dockerfile               # Multi-stage Docker build for optimized image size and secure production runtime
 .dockerignore
 src/
  ├── controllers/        # Handle HTTP requests and responses
@@ -284,11 +293,15 @@ http://localhost:3000
 
 - 📦 CommonJS module system  
 
-- Layeres architecture
+- 🧱 Layeres architecture
 
-- Microservice-ready architecture
+- ⚙️ Microservice-ready architecture
 
-- Docker-ready deploynent
+- 🐳 Docker-ready deploynent
+
+- 🚀 CI/CD pipeline with GitHub Actions 
+
+- 📦 Container image registry using Docker Hub
 
 ## 🔮 Future Improvements
 
@@ -298,7 +311,12 @@ http://localhost:3000
 
 - 📘 Swagger API documentation 
 
-- 🚀 CI/CD pipeline (GitHub Actions) 
+- ☸️ Kubernetes support for local and cloud deployments
+
+- 📊 Observability with Prometheus and Grafana
+
+- ⚡ Horizontal Pod Autoscaling (HPA) for automatic scaling base on workload
+
 
 ## 📌 Author
 
