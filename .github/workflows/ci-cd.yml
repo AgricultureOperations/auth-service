@@ -3,6 +3,16 @@ name: Auth Service CI/CD
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'auth-service/src/**'
+      - 'auth-service/test/**'
+      - 'auth-service/package.json'
+      - 'auth-service/package-lock.json'
+      - 'auth-service/tsconfig.json'
+      - 'auth-service/jest.config.js'
+      - 'auth-service/jest.setup.js'
+      - 'auth-service/Dockerfile'
+      - '.github/workflows/**'
 
 jobs:
 
