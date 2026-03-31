@@ -144,7 +144,7 @@ Database("database.db");
 
 ### 1. Register new user
 
-`POST /auth/registe`
+`POST /api/v1/auth/register`
 
 **Request body:**
 
@@ -166,7 +166,7 @@ Database("database.db");
 
 ### 2. Login user
 
-`POST /auth/login`
+`POST /api/v1/auth/login`
 
 **Request body:**
 
@@ -187,11 +187,11 @@ Database("database.db");
 
 ### 3. Get users (Protected route)
 
-`GET /user`
+`GET /api/v1/user`
 
 ### 4. Get user by email (Protected route)
 
-`GET /user/:email`
+`GET /api/v1/user/:email`
 
 **Descripción:** Obtiene la información del usuario por email.
 
@@ -231,6 +231,7 @@ npm install
 ```bash
 PORT=your_port_here
 JWT_SECRET=your_secret_key
+DB_FILE=your_database_here
 ```
 
 ### 4. Run the development server:
@@ -246,6 +247,7 @@ npm run dev
 ```bash
 PORT=your_port_here
 JWT_SECRET=your_secret_key
+DB_FILE=your_database_here
 ```
 
 ### 2. Run all tests:
@@ -302,6 +304,8 @@ http://localhost:3000
 - 🚀 CI/CD pipeline with GitHub Actions 
 
 - 📦 Container image registry using Docker Hub
+
+- ✅ Deployment on Render 
 
 ## 🔮 Future Improvements
 
