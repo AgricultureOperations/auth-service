@@ -9,16 +9,16 @@ describe("User E2E", () => {
 
     it("should get user information using email", async () => {
         await request(app)
-        .post("/auth/register")
+        .post("/api/v1/auth/register")
         .send({ email: "edward.cruzcruz27041996@gmail.com", password: "ecruz22"});
         
         const login = await request(app)
-        .post("/auth/login")
+        .post("/api/v1/auth/login")
         .send({ email: "edward.cruzcruz27041996@gmail.com", password: "ecruz22"});
 
         //console.log(login.body)
         const getUserByEmail = await request(app)
-        .get("/user/edward.cruzcruz27041996@gmail.com")
+        .get("/api/v1/user/edward.cruzcruz27041996@gmail.com")
         .set("Authorization", `Bearer ${login.body.token}`);
         
         console.log(getUserByEmail.text);

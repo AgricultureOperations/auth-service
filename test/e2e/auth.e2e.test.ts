@@ -9,11 +9,11 @@ describe("Auth E2E", () => {
 
     it("should register and login", async () => {
         await request(app)
-        .post("/auth/register")
+        .post("/api/v1/auth/register")
         .send({ email: "edward.cruzcruz27041996@gmail.com", password: "ecruz22"});
         
         const login = await request(app)
-        .post("/auth/login")
+        .post("/api/v1/auth/login")
         .send({ email: "edward.cruzcruz27041996@gmail.com", password: "ecruz22"});
 
         expect(login.body.token).toBeDefined();
