@@ -53,8 +53,10 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/auth-service:${{ github.sha }} .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/auth-service:${{ github.sha }} \
+                        -t etcruz/auth-service:latest .
 
       - name: Push Docker image
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/auth-service:${{ github.sha }}
+          docker push etcruz/auth-service:latest
