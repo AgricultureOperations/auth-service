@@ -22,8 +22,12 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copy production dependencies from builder
-COPY --from=builder /app/node_modules ./node_modules
+# Create folder and assign permissions
+RUN mkdir -p /app/data && chown -R node:node /app
+
+# Install only production dependencies
+COPY package*.json ./
+RUN npm ci --omit=dev
 
 # Copy compiled app
 COPY --from=builder /app/dist ./dist
