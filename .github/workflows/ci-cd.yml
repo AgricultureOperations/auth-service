@@ -4,14 +4,14 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'auth-service/src/**'
-      - 'auth-service/test/**'
-      - 'auth-service/package.json'
-      - 'auth-service/package-lock.json'
-      - 'auth-service/tsconfig.json'
-      - 'auth-service/jest.config.js'
-      - 'auth-service/jest.setup.js'
-      - 'auth-service/Dockerfile'
+      - 'src/**'
+      - 'test/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'jest.config.js'
+      - 'jest.setup.js'
+      - 'Dockerfile'
       - '.github/workflows/**'
 
 jobs:
