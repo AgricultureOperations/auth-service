@@ -21,8 +21,8 @@ app.use(
   res.send("Hello World!!!");
 });*/
 
-app.use("/auth",authRoutes);
-app.use("/user",authMiddleware,userRoutes);
+app.use("api/v1/auth",authRoutes);
+app.use("api/v1/user",authMiddleware,userRoutes);
 
 app.use(errorMiddleware);
 
