@@ -19,6 +19,12 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
 
+    env: # 🔥 GLOBAL ENV VARIABLES
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+      JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+      JWT_TIMEEXP: ${{ secrets.JWT_TIMEEXP }}
+
     steps:
 
       - name: Checkout repository
