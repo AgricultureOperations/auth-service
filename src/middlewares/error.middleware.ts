@@ -14,6 +14,11 @@ export const errorMiddleware = (
         });
     }
 
+    // Malformed JSON from express.json()
+    if ((err as { type?: string }).type === "entity.parse.failed") {
+        return resp.status(400).json({ status: "error", message: "Malformed JSON body" });
+    }
+
     console.error("Unexpected Error:", err);
 
     return resp.status(500).json({

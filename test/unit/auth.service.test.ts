@@ -1,9 +1,9 @@
 import { AuthService } from "../../src/services/auth.service";
-import db from "../../src/data/database";
+import { resetDb } from "../helpers/db";
 
 describe("AuthService", () => {
     beforeEach(() => {
-      db.exec("DELETE FROM users");
+      resetDb();
     });
 
     const service = new AuthService();

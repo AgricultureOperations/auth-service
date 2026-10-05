@@ -1,9 +1,9 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "fs"
-/*
-const dbFile = process.env.DB_FILE || "database.db";
-const db = new Database(dbFile);*/
+import { runMigrations } from "./migrate";
+import { seed } from "./seed";
+
 const dbFileName = process.env.DB_FILE || "database.db";
 
 // ensure data folder exists
@@ -16,13 +16,11 @@ if (!fs.existsSync(dataDir)) {
 const dbPath = path.join(dataDir, dbFileName);
 
 const db = new Database(dbPath);
+db.pragma("foreign_keys = ON");
 
+// Schema changes go in src/data/migrations/, never here: they run once per database, on startup.
+const applied = runMigrations(db);
+if (applied.length) console.log(`[db] Applied migrations: ${applied.join(", ")}`);
+seed(db, { adminEmail: process.env.ADMIN_EMAIL, adminPassword: process.env.ADMIN_PASSWORD });
 
-db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL
-    );
-`);
 export default db;

@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 import express from "express";
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/user.routes";
+import roleRoutes from "./routes/role.routes";
+import permissionRoutes from "./routes/permission.routes";
 import { authMiddleware } from "./middlewares/auth.middleware";
 import { errorMiddleware } from "./middlewares/error.middleware";
 
@@ -18,7 +20,7 @@ app.use(express.json());
 app.use(
   cors({
     origin: FRONTEND_URL,
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true, // only needed if using cookies
   })
 );
@@ -29,6 +31,8 @@ app.use(
 
 app.use("/api/v1/auth",authRoutes);
 app.use("/api/v1/user",authMiddleware,userRoutes);
+app.use("/api/v1/roles",authMiddleware,roleRoutes);
+app.use("/api/v1/permissions",authMiddleware,permissionRoutes);
 
 app.use(errorMiddleware);
 

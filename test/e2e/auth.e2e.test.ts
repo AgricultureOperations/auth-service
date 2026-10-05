@@ -1,10 +1,10 @@
 import request from "supertest"
 import app from "../../src/app";
-import db from "../../src/data/database";
+import { resetDb } from "../helpers/db";
 
 describe("Auth E2E", () => {
     beforeEach(() => {
-      db.exec("DELETE FROM users");
+      resetDb();
     });
 
     it("should register and login", async () => {
