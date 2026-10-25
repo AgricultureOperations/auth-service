@@ -28,15 +28,15 @@ Requests flow in one direction only: `routes → controllers → services → re
 | Table | Notes |
 |---|---|
 | `actions` | `view`, `create`, `edit`, `delete` |
-| `resources` | `products`, `orders`, `users`, `roles` (`sort_order` 10, 20, …) |
+| `resources` | `products`, `orders`, `users`, `roles`, `customers`, `settings` (`sort_order` 10, 20, …) |
 | `permissions` | one per resource × action, `code` = `"<resource>:<action>"` |
 | `roles` | `key` (slug, immutable, used in the JWT), `name`, `description`, `is_system`, `is_active` |
 | `role_permissions` | `granted_at`, `granted_by` (user, `SET NULL` on delete) |
-| `users` | `name`, `role_id` (one role per user, `RESTRICT`), `is_active`, `token_version`, `created_at`, `updated_at`, `last_login_at` |
+| `users` | `name`, `role_id` (one role per user, `RESTRICT`), `is_active`, `token_version`, `created_at`, `updated_at`, `last_login_at`, `tax_id` (cédula/RUC, upper-cased, unique when set), `phone` (both `003_customer_fields`, used by customers) |
 
 All ids are UUID v4 text (`crypto.randomUUID()`), and all timestamps are ISO 8601 UTC text.
 
-System roles: `admin` (every permission, always), `operator` (view/create/edit on products and orders), `viewer` (view on products and orders). Guardrails (409):
+System roles: `admin` (every permission, always), `operator` (view/create/edit on products, orders and customers), `viewer` (view on products, orders and customers), `customer` (no permissions: buyers referenced by order-service orders). `settings:*` belongs to admin only by default. Guardrails (409):
 - Nobody can demote, deactivate or delete the last active admin.
 - The admin role's permissions can't be reduced.
 - System roles can't be deleted or deactivated.
@@ -60,6 +60,11 @@ Registration always assigns `viewer`.
 | PUT | `/roles/:id/permissions` `{ permissionIds: uuid[] }` | `roles:edit` |
 | DELETE | `/roles/:id` | `roles:delete` |
 | GET | `/permissions` → `{ actions, resources: [{ …, permissions }] }` (matrix-ready) | `roles:view` |
+| GET | `/customers?search=&isActive=&page=&pageSize=` (search on name, email, tax ID) → `{ data: CustomerDto[], meta }`, `/customers/:id` | `customers:view` |
+| POST | `/customers` `{ name, email, taxId?, phone? }` → 201 `CustomerDto` (role `customer`, random unusable password; 409 on a duplicate email or tax ID) | `customers:create` |
+| PATCH | `/customers/:id` `{ name?, taxId?, phone? }` (`null` clears; email is immutable; a non-customer id is 404) | `customers:edit` |
+
+`CustomerDto` = `{ id, name, email, taxId, phone, isActive, createdAt, updatedAt }`. Deactivating or deleting a customer goes through `/user` (`users:edit|delete`). `UserDto` also carries `taxId` and `phone` (null for back-office users), and `/user?search=` matches tax IDs too.
 
 A new protected resource needs: a `RESOURCES` entry in `data/seed.ts` (admin picks up its permissions on the next start), a router mounted behind `authMiddleware` in `app.ts`, and `requirePermission` on each route.
 
@@ -70,9 +75,12 @@ A new protected resource needs: a `RESOURCES` entry in `data/seed.ts` (admin pic
 - Each migration runs in its own transaction with foreign keys off, and must leave `PRAGMA foreign_key_check` clean. This allows the SQLite rebuild pattern: create the new table, copy the rows, drop the old table, rename.
 - **Never edit or reorder a migration that has shipped. Add a new one.** It must run on an empty DB and on the Render/compose volume.
 - `002_rbac` rebuilt `users` and backfilled existing users with `viewer` and `name` = the email's local part.
+- `003_customer_fields` adds nullable `users.tax_id` and `users.phone`, plus a partial unique index on `tax_id`.
 - `seed.ts` is idempotent and matches rows by key/name, never by id. It upserts actions and resources, creates any missing `resource:action` permissions and system roles, and re-grants admin every permission.
 - Default grants for `operator`/`viewer` are applied once, recorded in `seed_history`, so an admin's later edits survive restarts.
+- Grants added after a role already exists go in `GRANT_SETS` (e.g. `grants:customers-v1`). Each set is applied once under its own `seed_history` key, so it reaches existing Render/compose databases and an admin can still revoke it. Append a new set; never edit one that has shipped.
 - The first admin is created from `ADMIN_EMAIL`/`ADMIN_PASSWORD` only if no user has that email; an existing account is never changed.
+- Without an admin, nobody can open `/users` or `/roles` in the frontend (only `admin` has `users:*`/`roles:*`). To promote an existing account, update its `role_id` to the `admin` role and bump `token_version` by hand. `docs/rbac-deployment.md` has the query, a `docker compose exec … node -e` version (the runtime image has no `sqlite3`), a manual SQL equivalent of `002_rbac` + seed, verification queries and the rollback steps. A hand-applied migration must also insert its id into `schema_migrations`, or the next startup runs it again and fails.
 
 ## Key Folder Responsibilities
 
@@ -80,7 +88,7 @@ A new protected resource needs: a `RESOURCES` entry in `data/seed.ts` (admin pic
 |---|---|
 | `src/app.ts` | Builds the Express app (JSON, CORS, routes, error middleware) without listening; tests import it |
 | `src/server.ts` | Entry point: loads `.env` and calls `listen` on `PORT` |
-| `src/routes/` | `auth`, `user`, `role`, `permission` routers; `requirePermission` per route |
+| `src/routes/` | `auth`, `user`, `role`, `permission`, `customer` routers; `requirePermission` per route |
 | `src/controllers/` | HTTP layer: validates `req` (`utils/validation.ts`) and sends the status and JSON response |
 | `src/services/` | Business logic and guardrails (`AppError`) |
 | `src/repositories/` | Data access with synchronous prepared statements, plus `inTransaction` |
@@ -90,8 +98,9 @@ A new protected resource needs: a `RESOURCES` entry in `data/seed.ts` (admin pic
 | `src/data/` | `database.ts`, `migrate.ts`, `migrations/`, `seed.ts` |
 | `test/helpers/db.ts` | `resetDb()`, `userWithRole(key)`, `adminToken()`, `bearer()`, `roleId()` |
 | `test/unit` | Service, migration and seed tests (the last two use their own temp DB files) |
-| `test/integration`, `test/e2e` | HTTP tests that drive `app` with Supertest (`rbac.*.e2e.test.ts` cover every endpoint for 401/403/2xx) |
+| `test/integration`, `test/e2e` | HTTP tests that drive `app` with Supertest (`rbac.*.e2e.test.ts` cover every endpoint for 401/403/2xx; `rbac.customers.e2e.test.ts` covers `/customers` and the `settings:*` grants) |
 | `docs/rbac-handoff.md` | Contract notes for order-service/product-service (Phase 2) and the frontend (Phase 3) |
+| `docs/rbac-deployment.md` | Deploying `002_rbac` to another environment: backup, first admin, manual SQL, admin promotion, verification, rollback |
 
 ## Build & Run Commands
 

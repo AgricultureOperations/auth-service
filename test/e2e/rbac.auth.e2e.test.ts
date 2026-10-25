@@ -16,7 +16,7 @@ describe("RBAC: tokens and authentication", () => {
 
         expect(claims.sub).toBe(claims.id);
         expect(claims).toMatchObject({ email: ADMIN.email, role: "admin", tv: 0 });
-        expect(claims.permissions).toHaveLength(16);
+        expect(claims.permissions).toHaveLength(24);
         expect(claims.permissions).toEqual(expect.arrayContaining(["users:delete", "roles:edit", "orders:view"]));
         expect(claims.exp).toBeGreaterThan(claims.iat!);
     });
@@ -28,7 +28,7 @@ describe("RBAC: tokens and authentication", () => {
         expect(resp.body).toEqual({ id: expect.any(String), email: "sneaky@agriops.test" });
 
         const claims = jwt.decode(await login("sneaky@agriops.test")) as jwt.JwtPayload;
-        expect(claims).toMatchObject({ role: "viewer", permissions: ["orders:view", "products:view"] });
+        expect(claims).toMatchObject({ role: "viewer", permissions: ["customers:view", "orders:view", "products:view"] });
     });
 
     it("GET /auth/me returns the caller with role and permissions, never the password", async () => {
@@ -36,7 +36,7 @@ describe("RBAC: tokens and authentication", () => {
         const resp = await me(await adminToken());
         expect(resp.status).toBe(200);
         expect(resp.body).toMatchObject({ email: ADMIN.email, name: "Administrator", isActive: true, role: { key: "admin" } });
-        expect(resp.body.permissions).toHaveLength(16);
+        expect(resp.body.permissions).toHaveLength(24);
         expect(resp.body.lastLoginAt).toEqual(expect.any(String));
         expect(JSON.stringify(resp.body)).not.toContain("password");
     });

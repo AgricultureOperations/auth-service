@@ -10,6 +10,8 @@ export interface User {
     created_at: string;
     updated_at: string;
     last_login_at: string | null;
+    tax_id: string | null;
+    phone: string | null;
 }
 
 // Row returned by UserRepository's joined reads (no password).
@@ -22,6 +24,8 @@ export interface UserWithRoleRow {
     created_at: string;
     updated_at: string;
     last_login_at: string | null;
+    tax_id: string | null;
+    phone: string | null;
     role_id: string;
     role_key: string;
     role_name: string;
@@ -37,6 +41,9 @@ export interface UserDto {
     createdAt: string;
     updatedAt: string;
     lastLoginAt: string | null;
+    // Customer data (cédula/RUC, phone); null for back-office users.
+    taxId: string | null;
+    phone: string | null;
 }
 
 export const toUserDto = (row: UserWithRoleRow): UserDto => ({
@@ -48,11 +55,38 @@ export const toUserDto = (row: UserWithRoleRow): UserDto => ({
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastLoginAt: row.last_login_at,
+    taxId: row.tax_id,
+    phone: row.phone,
+});
+
+// GET/POST/PATCH /customers: a user with the customer role, without back-office fields.
+export interface CustomerDto {
+    id: string;
+    name: string;
+    email: string;
+    taxId: string | null;
+    phone: string | null;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export const toCustomerDto = (row: UserWithRoleRow): CustomerDto => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    taxId: row.tax_id,
+    phone: row.phone,
+    isActive: row.is_active === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
 });
 
 export interface UserListFilter {
     search?: string;
     roleId?: string;
+    // Role by key (e.g. "customer"), for /customers.
+    roleKey?: string;
     isActive?: boolean;
     page: number;
     pageSize: number;

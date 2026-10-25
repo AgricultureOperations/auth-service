@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/user.routes";
 import roleRoutes from "./routes/role.routes";
 import permissionRoutes from "./routes/permission.routes";
+import customerRoutes from "./routes/customer.routes";
 import { authMiddleware } from "./middlewares/auth.middleware";
 import { errorMiddleware } from "./middlewares/error.middleware";
 
@@ -33,6 +34,7 @@ app.use("/api/v1/auth",authRoutes);
 app.use("/api/v1/user",authMiddleware,userRoutes);
 app.use("/api/v1/roles",authMiddleware,roleRoutes);
 app.use("/api/v1/permissions",authMiddleware,permissionRoutes);
+app.use("/api/v1/customers",authMiddleware,customerRoutes);
 
 app.use(errorMiddleware);
 

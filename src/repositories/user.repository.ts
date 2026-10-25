@@ -4,6 +4,7 @@ import { User, UserListFilter, UserWithRoleRow } from "../models/user.model";
 // Explicit column list: the password hash is only ever read by findByEmail (login).
 const SELECT_WITH_ROLE = `
     SELECT u.id, u.email, u.name, u.is_active, u.token_version, u.created_at, u.updated_at, u.last_login_at,
+           u.tax_id, u.phone,
            r.id AS role_id, r.key AS role_key, r.name AS role_name
     FROM users u JOIN roles r ON r.id = u.role_id
 `;
@@ -11,13 +12,28 @@ const SELECT_WITH_ROLE = `
 export const escapeLike = (value: string) => value.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 export class UserRepository {
-    create(user: Pick<User, "id" | "email" | "password" | "name" | "role_id">) {
+    create(user: Pick<User, "id" | "email" | "password" | "name" | "role_id"> & Partial<Pick<User, "tax_id" | "phone">>) {
         const now = new Date().toISOString();
         db.prepare(`
-            INSERT INTO users (id, email, password, name, role_id, is_active, token_version, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?)
-        `).run(user.id, user.email, user.password, user.name, user.role_id, now, now);
+            INSERT INTO users (id, email, password, name, role_id, is_active, token_version, created_at, updated_at, tax_id, phone)
+            VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
+        `).run(user.id, user.email, user.password, user.name, user.role_id, now, now, user.tax_id ?? null, user.phone ?? null);
         return user;
+    }
+
+    existsByTaxId(taxId: string, exceptId?: string): boolean {
+        return !!db.prepare(`SELECT 1 FROM users WHERE upper(tax_id) = upper(?) AND id IS NOT ?`).get(taxId, exceptId ?? null);
+    }
+
+    // Customer fields only; `undefined` keeps a value, `null` clears it.
+    updateCustomer(id: string, changes: { name?: string; taxId?: string | null; phone?: string | null }) {
+        const sets: string[] = [];
+        const params: unknown[] = [];
+        if (changes.name !== undefined) { sets.push("name = ?"); params.push(changes.name); }
+        if (changes.taxId !== undefined) { sets.push("tax_id = ?"); params.push(changes.taxId); }
+        if (changes.phone !== undefined) { sets.push("phone = ?"); params.push(changes.phone); }
+        if (sets.length === 0) return;
+        db.prepare(`UPDATE users SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`).run(...params, new Date().toISOString(), id);
     }
 
     findByEmail(email: string): User | undefined {
@@ -32,18 +48,22 @@ export class UserRepository {
         return db.prepare(`${SELECT_WITH_ROLE} WHERE u.id = ?`).get(id) as UserWithRoleRow | undefined;
     }
 
-    findMany({ search, roleId, isActive, page, pageSize }: UserListFilter): { rows: UserWithRoleRow[]; total: number } {
+    findMany({ search, roleId, roleKey, isActive, page, pageSize }: UserListFilter): { rows: UserWithRoleRow[]; total: number } {
         const where: string[] = [];
         const params: unknown[] = [];
         if (search) {
             // LIKE is case-insensitive for ASCII in SQLite.
-            where.push(`(u.name LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\')`);
+            where.push(`(u.name LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\' OR u.tax_id LIKE ? ESCAPE '\\')`);
             const pattern = `%${escapeLike(search)}%`;
-            params.push(pattern, pattern);
+            params.push(pattern, pattern, pattern);
         }
         if (roleId) {
             where.push(`u.role_id = ?`);
             params.push(roleId);
+        }
+        if (roleKey) {
+            where.push(`u.role_id = (SELECT id FROM roles WHERE key = ?)`);
+            params.push(roleKey);
         }
         if (isActive !== undefined) {
             where.push(`u.is_active = ?`);

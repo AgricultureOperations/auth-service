@@ -11,13 +11,19 @@ Signed HS256 with the shared `JWT_SECRET`, `iss` = `JWT_ISSUER` (`auth-service`)
 | `sub` | string (UUID v4) | user id; use this |
 | `id` | string (UUID v4) | same as `sub`, kept because the original payload was `{ id, email }` |
 | `email` | string | |
-| `role` | string | role key: `admin`, `operator`, `viewer` or a custom key |
+| `role` | string | role key: `admin`, `operator`, `viewer`, `customer` or a custom key |
 | `permissions` | string[] | `"<resource>:<action>"`, e.g. `orders:view`, `products:edit` |
 | `tv` | number | token version; only auth-service checks it |
 
-Resources today: `products`, `orders`, `users`, `roles`. Actions: `view`, `create`, `edit`, `delete`.
+Resources today: `products`, `orders`, `users`, `roles`, `customers`, `settings`. Actions: `view`, `create`, `edit`, `delete`.
+
+- `customers:*` guards `/api/v1/customers` (users with the `customer` role). Default grants (seed set `grants:customers-v1`): operator view/create/edit, viewer view.
+- `settings:*` guards system configuration in other services (today order-service's `/api/v1/order-settings`: `settings:view` / `settings:edit`). Only admin has it by default.
+- The `customer` role has no permissions. Customer accounts get a random password, so they can't sign in to the back office.
 
 ## Phase 2: order-service and product-service
+
+**Status:** done in order-service (one ASP.NET policy per `orders:*`/`settings:*` code, 403 `{ message }`, `sub` for audit fields; see `order-service/CLAUDE.md`). Pending in product-service.
 
 - **Authorize on `permissions`, not on `role`.** Roles are editable and custom roles exist, so a role name says nothing stable about access. Suggested mapping:
 
@@ -33,7 +39,7 @@ Resources today: `products`, `orders`, `users`, `roles`. Actions: `view`, `creat
   - **403** with `{ message }`: a valid token without the needed permission. Never 401 for this.
 - **Stale tokens.** Downstream services can't check `tv`, which lives in auth-service's DB. Don't call auth-service to check it (architecture rule: no backend-to-backend calls). After a role or permission change, a downstream service keeps honouring the old token until `exp`, so keep `JWT_TIMEEXP` short (1h today). auth-service itself rejects stale tokens immediately.
 - **Ship order.** Consumers must tolerate tokens without `permissions`: an old token issued before the auth-service deploy should be treated as having no permissions, i.e. 403, or simply re-login. auth-service ships first. Its deploy invalidates every existing token (no `tv`), so every user logs in again once.
-- **Ownership.** Take the user id from `sub` for ownership (`Order.CustomerId`), never from the request body.
+- **Acting user vs. customer.** Take the acting user from `sub` (order-service's `CreatedBy`/`UpdatedBy`/`DeletedBy`), never from the request body. `Order.CustomerId` is something else: the buyer, an auth-service user with the `customer` role, which the frontend picks from `/api/v1/customers` and order-service stores together with a snapshot.
 - **Tests.** Sign test tokens with the same claims; include a token that has the resource's `view` but not `edit`.
 
 ## Phase 3: frontend

@@ -16,10 +16,13 @@ export const RESOURCES = [
     { key: "orders", name: "Orders", description: "Orders (order-service)" },
     { key: "users", name: "Users", description: "Platform users" },
     { key: "roles", name: "Roles & permissions", description: "Roles and their permissions" },
+    { key: "customers", name: "Customers", description: "Buyers: users with the customer role, referenced by orders" },
+    { key: "settings", name: "Settings", description: "System configuration, e.g. the order number prefix (order-service)" },
 ];
 
 export const ADMIN_ROLE = "admin";
 export const VIEWER_ROLE = "viewer";
+export const CUSTOMER_ROLE = "customer";
 
 // Defaults are applied once per role (recorded in seed_history), so later edits by an admin survive restarts.
 // admin is the exception: it always gets every permission.
@@ -32,6 +35,21 @@ export const SYSTEM_ROLES = [
         defaults: ["products:view", "products:create", "products:edit", "orders:view", "orders:create", "orders:edit"],
     },
     { key: VIEWER_ROLE, name: "Viewer", description: "Read-only access to products and orders", defaults: ["products:view", "orders:view"] },
+    // Buyers. No back-office permissions; created through /customers with a random password nobody knows.
+    { key: CUSTOMER_ROLE, name: "Customer", description: "Buyer referenced by orders, without back-office access", defaults: [] },
+];
+
+// Grants added after a role's first seed. Each set is applied once (recorded in seed_history under its key),
+// so it reaches roles that already exist on Render/compose and an admin can still revoke it afterwards.
+// Append a new set for new grants; never edit one that has shipped. admin needs none: it always gets everything.
+export const GRANT_SETS: { key: string; grants: Record<string, string[]> }[] = [
+    {
+        key: "grants:customers-v1",
+        grants: {
+            operator: ["customers:view", "customers:create", "customers:edit"],
+            viewer: ["customers:view"],
+        },
+    },
 ];
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -84,6 +102,13 @@ export const seed = (db: Database, { adminEmail, adminPassword, log = console.wa
             if (role.defaults && markSeeded.run(`role-defaults:${role.key}`, now).changes > 0) {
                 const roleId = idOf("roles", role.key);
                 role.defaults.forEach((code) => grant.run(roleId, now, code));
+            }
+        }
+        for (const set of GRANT_SETS) {
+            if (markSeeded.run(set.key, now).changes === 0) continue;
+            for (const [roleKey, codes] of Object.entries(set.grants)) {
+                const roleId = idOf("roles", roleKey);
+                codes.forEach((code) => grant.run(roleId, now, code));
             }
         }
         db.prepare(`

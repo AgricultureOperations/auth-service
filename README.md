@@ -1,6 +1,6 @@
 # 🔐 AgriOps Auth Service
 
-Auth Service is the authentication microservice of the **AgricultureOperations (AgriOps)** platform. It registers users, logs them in, issues the JWTs that the rest of the platform trusts, and serves the user list.
+Auth Service is the authentication and authorization microservice of the **AgricultureOperations (AgriOps)** platform. It registers users and logs them in, and issues the JWTs (with role and permissions) that the rest of the platform trusts. It also manages users, roles and permissions (RBAC), and the platform's **customers**: users with the `customer` role that orders refer to.
 
 It is built with **Express 5**, **TypeScript** (strict, CommonJS) and **SQLite** (`better-sqlite3`), and follows a **layered architecture**: routes → controllers → services → repositories.
 
@@ -8,30 +8,33 @@ It is built with **Express 5**, **TypeScript** (strict, CommonJS) and **SQLite**
 
 ## 🌐 Place in the AgriOps Platform
 
-AgriOps is made of three independent services, each in its own repository with its own CI/CD:
+AgriOps is made of four independent services, each in its own repository with its own CI/CD:
 
 | Service | Stack | Role |
 |---|---|---|
-| **auth-service** (this repo) | Express 5 + TypeScript + SQLite | Users, login, JWT issuance |
-| [order-service](https://github.com/edwardcruzcruz/order-service) | ASP.NET Core (.NET 9) + PostgreSQL | JWT-protected order CRUD |
-| [agriops-web](https://github.com/edwardcruzcruz/agriops-web) | React 18 + Vite | Back-office SPA for both backends |
+| **auth-service** (this repo) | Express 5 + TypeScript + SQLite | Login, JWT issuance, users, roles & permissions, customers |
+| [order-service](https://github.com/edwardcruzcruz/order-service) | ASP.NET Core (.NET 9) + PostgreSQL | Sales orders: lines, workflow, order numbering |
+| product-service | NestJS 11 + Prisma + PostgreSQL | Product catalog |
+| [agriops-web](https://github.com/edwardcruzcruz/agriops-web) | React 18 + Vite | Back-office SPA for every backend |
 
 ```
-frontend ──(login/register, users)──▶ auth-service   ──issues JWT──┐
-    │                                                              │ shared secret/issuer/audience
-    └──(Bearer JWT, orders)──────────▶ order-service ◀─validates───┘
+frontend ──(login, users, roles, customers)──▶ auth-service    ──issues JWT──┐
+    │                                                                        │ shared secret/issuer/audience
+    ├──(Bearer JWT, orders)──────────────────▶ order-service   ◀─validates───┤
+    └──(Bearer JWT, products)────────────────▶ product-service ◀─validates───┘
 ```
 
 - The browser is the only client. The backends never call each other.
-- The only link between auth-service and order-service is the **shared JWT configuration**. `JWT_SECRET`, `JWT_ISSUER` (`auth-service`) and `JWT_AUDIENCE` (`orders-api`) must match order-service's `Jwt:Secret`, `Jwt:Issuer` and `Jwt:Audience`. If any of them differ, every order request returns 401.
-- This service owns the `users` table exclusively. Other services refer to a user only by `id` (UUID), for example `Order.customerId`.
+- The only link to the other backends is the **shared JWT configuration**: `JWT_SECRET`, `JWT_ISSUER` (`auth-service`) and `JWT_AUDIENCE` (`orders-api`) must match theirs, or every order and product request returns 401.
+- The other services authorize on the token's `permissions` claim (e.g. order-service checks `orders:*` and `settings:*`, and answers 403 without them).
+- This service owns the `users`, `roles` and permission tables exclusively. Other services refer to a user only by `id`. Each order-service order stores its customer's id plus a copy of the customer's data, and the frontend reads customers from `/api/v1/customers`.
 
 ---
 
 ## 🛠 Tech Stack
 
 - Node.js, Express 5, TypeScript (strict, CommonJS)
-- SQLite through `better-sqlite3` (synchronous prepared statements)
+- SQLite through `better-sqlite3` (synchronous prepared statements), versioned migrations
 - `bcrypt` for password hashing, `jsonwebtoken` for HS256 JWTs
 - Jest + ts-jest + Supertest for tests
 - Docker (multi-stage, `node:20-alpine`), GitHub Actions, Docker Hub, Render
@@ -48,15 +51,16 @@ routes → controllers → services → repositories → SQLite
 
 | Layer | Responsibility |
 |---|---|
-| Routes | Map HTTP paths to controller functions |
-| Controllers | Read `req` and send the status and JSON. Wrapped in `asyncHandler` |
-| Services | Business logic: hashing, credential checks, not-found errors. Throw `AppError(message, statusCode)` |
-| Repositories | Data access with synchronous prepared statements |
+| Routes | Map HTTP paths to controllers; `requirePermission("<resource>:<action>")` on every protected route |
+| Controllers | Validate `req` (`utils/validation.ts`: UUID v4 ids, allowed body fields, formats) and send the status and JSON. Wrapped in `asyncHandler` |
+| Services | Business logic and guardrails (last admin, system roles, duplicate email/tax ID). Throw `AppError(message, statusCode)` |
+| Repositories | Data access with synchronous prepared statements and explicit column lists; `inTransaction` for multi-step writes |
 
 Conventions:
-- **No DI container.** Controllers create services at module level, and services create `UserRepository` as a class field.
-- **Errors.** Throw `AppError` from a service to return a specific status. `errorMiddleware` turns an `AppError` into `{ status: "error", message }` and any other error into a 500 `{ status: "Error", message: "Internal Server Error" }`. Clients read only `message`.
-- **Auth at mount time.** `app.ts` mounts `/api/v1/auth` as public and `/api/v1/user` behind `authMiddleware`.
+- **No DI container.** Controllers create services at module level, and services create repositories as class fields.
+- **Errors** are `{ status: "error", message }` with the right status. Clients read only `message`.
+- **401 vs 403.** `authMiddleware` returns 401 for a missing, invalid, expired or stale token (the frontend then logs out). `requirePermission` returns 403 for "signed in but not allowed" (the session is kept).
+- **Responses never contain `password`.** Only the login query reads the hash.
 - **All routes live under `/api/v1/`.** The frontend exempts `/api/v1/auth/login` from its 401 logout handling by exact path, so don't rename that route.
 
 ---
@@ -67,62 +71,97 @@ Conventions:
 src/
  ├── app.ts              # Builds the Express app (JSON, CORS, routes, error middleware); no listen, so tests can import it
  ├── server.ts           # Entry point: loads .env, listens on 0.0.0.0:$PORT
- ├── routes/             # auth.routes.ts, user.routes.ts
- ├── controllers/        # HTTP layer
- ├── services/           # AuthService, UserService
- ├── repositories/       # UserRepository (SQL)
- ├── models/             # User interface
- ├── middlewares/        # authMiddleware (JWT guard), errorMiddleware
- ├── utils/              # jwt.ts (sign/verify), AppError, asyncHandler
- └── data/database.ts    # Opens <cwd>/data/$DB_FILE and creates the schema
+ ├── routes/             # auth, user, role, permission, customer routers
+ ├── controllers/        # HTTP layer + input validation
+ ├── services/           # AuthService, UserService, RoleService, PermissionService, CustomerService
+ ├── repositories/       # UserRepository, RoleRepository, PermissionRepository, inTransaction
+ ├── models/             # Row types, DTOs and to*Dto mappers (UserDto, CustomerDto, RoleDto, …)
+ ├── middlewares/        # authMiddleware (401), requirePermission / requireRole (403), errorMiddleware
+ ├── utils/              # jwt.ts, validation.ts, AppError, asyncHandler
+ └── data/               # database.ts, migrate.ts, migrations/ (001_baseline, 002_rbac, 003_customer_fields), seed.ts
+
+docs/
+ ├── rbac-handoff.md     # Contract notes for order-service, product-service and the frontend
+ └── rbac-deployment.md  # Deploying RBAC to another environment: backup, first admin, manual SQL, rollback
 
 test/
- ├── unit/               # Service tests
- ├── integration/        # HTTP tests against `app` with Supertest
- └── e2e/                # Full register → login → protected-route flows with Supertest
+ ├── helpers/db.ts       # resetDb(), userWithRole(key), adminToken(), bearer(), roleId()
+ ├── unit/               # Service, migration and seed tests
+ ├── integration/        # HTTP tests against `app`
+ └── e2e/                # Supertest flows; rbac.*.e2e.test.ts cover 401/403/2xx for every endpoint
 ```
+
+---
+
+## 🔐 Roles & Permissions
+
+Permissions are `"<resource>:<action>"` codes: resources `products`, `orders`, `users`, `roles`, `customers`, `settings` × actions `view`, `create`, `edit`, `delete`.
+
+| Role | Default permissions |
+|---|---|
+| `admin` | Everything, always (its permissions can't be reduced) |
+| `operator` | view/create/edit on `products`, `orders` and `customers` |
+| `viewer` | view on `products`, `orders` and `customers` |
+| `customer` | none: a buyer referenced by orders, with no back-office access |
+
+- `settings:*` (e.g. order-service's order number prefix) is **admin only** by default.
+- Admins can create custom roles and change any non-admin role's permissions from the frontend's Roles screen.
+- Guardrails (409): the last active admin can't be demoted, deactivated or deleted; system roles can't be deleted or deactivated; a role with users can't be deleted or deactivated.
+- Registration always assigns `viewer`.
+- Changing a user's role, deactivating them or changing a role's permissions bumps the `token_version`, so existing tokens stop working here immediately. Other services honour a token until it expires, so keep `JWT_TIMEEXP` short.
 
 ---
 
 ## 🔑 API
 
-Base path: `/api/v1`. Bodies are JSON, camelCase and unwrapped (no `{ success, data }` envelope).
+Base path: `/api/v1`. Bodies are JSON, camelCase and unwrapped (no `{ success, data }` envelope). Lists are `{ data, meta: { page, pageSize, total, totalPages } }`.
 
-| Method | Path | Auth | Success | Body |
-|---|---|---|---|---|
-| `POST` | `/api/v1/auth/register` | public | 201 | `{ id, email }` |
-| `POST` | `/api/v1/auth/login` | public | 200 | `{ token }` |
-| `GET` | `/api/v1/user` | Bearer JWT | 200 | `User[]` (bare array) |
-| `GET` | `/api/v1/user/:email` | Bearer JWT | 200 | `{ user }` (wrapped) |
+| Method | Path | Permission | Success |
+|---|---|---|---|
+| `POST` | `/auth/register` `{ email, password }` | public | 201 `{ id, email }` |
+| `POST` | `/auth/login` `{ email, password }` | public | 200 `{ token }` |
+| `GET` | `/auth/me` | signed in | 200 `UserDto` + `permissions: string[]` |
+| `GET` | `/user?search=&roleId=&isActive=&page=&pageSize=`, `/user/:id` | `users:view` | 200 |
+| `POST` | `/user` `{ name, email, password, roleId }` | `users:create` | 201 `UserDto` |
+| `PATCH` | `/user/:id` `{ name }`, `/user/:id/role` `{ roleId }`, `/user/:id/status` `{ isActive }` | `users:edit` | 200 `UserDto` |
+| `DELETE` | `/user/:id` | `users:delete` | 204 |
+| `GET` | `/roles?search=&isActive=`, `/roles/:id` | `roles:view` | 200 (with `userCount`, `permissionIds`) |
+| `POST` / `PATCH` / `DELETE` | `/roles`, `/roles/:id` | `roles:create` / `edit` / `delete` | 201 / 200 / 204 |
+| `PUT` | `/roles/:id/permissions` `{ permissionIds }` | `roles:edit` | 200 |
+| `GET` | `/permissions` (matrix-ready) | `roles:view` | 200 |
+| `GET` | `/customers?search=&isActive=&page=&pageSize=`, `/customers/:id` | `customers:view` | 200 `CustomerDto` list / item |
+| `POST` | `/customers` `{ name, email, taxId?, phone? }` | `customers:create` | 201 `CustomerDto` |
+| `PATCH` | `/customers/:id` `{ name?, taxId?, phone? }` | `customers:edit` | 200 `CustomerDto` |
 
-Request body for register and login:
+- `UserDto` = `{ id, name, email, isActive, role: { id, key, name }, createdAt, updatedAt, lastLoginAt, taxId, phone }`.
+- `CustomerDto` = `{ id, name, email, taxId, phone, isActive, createdAt, updatedAt }`.
 
-```json
-{ "email": "user@example.com", "password": "yourPassword123" }
-```
+### Customers
 
-Protected routes need the header:
-
-```
-Authorization: Bearer <jwt>
-```
-
-Errors:
-- Login with an unknown email or wrong password returns `401 { status: "error", message: "Invalid credentials" }`.
-- `GET /api/v1/user/:email` for an unknown email returns `404 { status: "error", message: "User not found" }`.
-- `authMiddleware` returns a bare **401** when the `Authorization` header is missing, and a bare **403** when the token is invalid or expired.
+- A customer is a user with the `customer` role. It gets a random password nobody knows, so it can't sign in.
+- `taxId` (cédula, RUC or passport) is 5–20 letters, digits or dashes, is stored upper-cased, and is unique. A duplicate email or tax ID returns 409.
+- In a PATCH, `null` clears `taxId` or `phone`. The email can't be changed, and a non-customer id returns 404.
+- `search` matches name, email or tax ID, and `/user?search=` matches tax IDs too.
+- To deactivate or delete a customer, use `/user/:id/status` or `DELETE /user/:id`.
 
 ### JWT
 
-`generateToken` signs HS256 tokens with payload `{ id, email }` plus `iss` (`JWT_ISSUER`), `aud` (`JWT_AUDIENCE`) and `exp` (`JWT_TIMEEXP`). There is no refresh token and no logout endpoint. A token stays valid until it expires.
+HS256 tokens with payload `{ sub, id, email, role, permissions, tv }` plus `iss` (`JWT_ISSUER`), `aud` (`JWT_AUDIENCE`) and `exp` (`JWT_TIMEEXP`). `id` duplicates `sub` for old consumers, and `tv` is the token version. There is no refresh token and no logout endpoint. See `docs/rbac-handoff.md` for what consumers should do with each claim.
 
 ---
 
 ## 🗄 Database
 
-- SQLite file at `<cwd>/data/$DB_FILE` (default `database.db`). In the container that is `/app/data/$DB_FILE`. Mount a **named volume** at `/app/data` so the data outlives the container.
-- `src/data/database.ts` opens one shared connection and creates the schema with `CREATE TABLE IF NOT EXISTS users (id, email UNIQUE, password)`.
-- **There is no migration system.** Editing that `CREATE TABLE` statement has no effect on an existing database. Add schema changes as versioned, idempotent steps (tracked with `PRAGMA user_version`, run inside `db.transaction`), and make new columns nullable or give them defaults.
+- SQLite file at `<cwd>/data/$DB_FILE` (default `database.db`). In the container that is `/app/data/$DB_FILE`; mount a **named volume** at `/app/data` so the data outlives the container.
+- **Migrations** (`src/data/migrations/`, listed in `index.ts`) run on every startup, each in its own transaction, and are recorded in `schema_migrations`:
+  - `001_baseline`: the original `users` table.
+  - `002_rbac`: the RBAC tables; existing users become `viewer`.
+  - `003_customer_fields`: nullable `users.tax_id` (unique when set) and `users.phone`.
+  - Never edit or reorder a migration that has shipped; add a new one with nullable or defaulted columns.
+- **Seed** (`src/data/seed.ts`) runs after the migrations and is idempotent:
+  - It creates the actions, resources, permissions and system roles, and re-grants admin every permission.
+  - Default grants are applied once per role. Grants added later (`GRANT_SETS`, e.g. `grants:customers-v1`) are applied once to existing databases too. Both are recorded in `seed_history`, so an admin's later changes survive restarts.
+  - The first admin comes from `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 
 ---
 
@@ -133,7 +172,7 @@ Errors:
 ```bash
 git clone https://github.com/AgricultureOperations/auth-service.git auth-service
 cd auth-service
-npm install
+npm install          # use Node 24 (CI's version): better-sqlite3 is a native module
 ```
 
 ### 2. Configure the environment
@@ -143,12 +182,13 @@ Copy `.env.example` to `.env` and fill it in:
 | Variable | Description |
 |---|---|
 | `PORT` | Listen port (default `3000`) |
-| `JWT_SECRET` | HS256 signing secret, **at least 32 bytes** (order-service rejects shorter keys). Must match order-service's `Jwt:Secret` |
+| `JWT_SECRET` | HS256 signing secret, **at least 32 bytes** (order-service rejects shorter keys). Must match the other services |
 | `JWT_ISSUER` | Token issuer, `auth-service` |
 | `JWT_AUDIENCE` | Token audience, `orders-api` |
 | `JWT_TIMEEXP` | Token lifetime, e.g. `1h` |
 | `DB_FILE` | SQLite file name inside `data/` (default `database.db`) |
 | `FRONTEND_URL` | The only allowed CORS origin. Default `http://localhost:5173`. On Render: `https://agricultureops.netlify.app` |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The first admin, created on startup if no user has that email. Optional once an admin exists |
 
 `.env*` files (except `.env.example`) and `*.db` files are gitignored and excluded from the Docker build context. Never commit them.
 
@@ -167,13 +207,14 @@ The API is served on `http://localhost:3000`. There is no lint script.
 ## 🧪 Testing
 
 ```bash
-npm test                                   # jest --runInBand (serial is required)
-npx jest test/unit/auth.service.test.ts    # a single file
-npx jest -t "should register and login"    # a single test by name
+npm test                                        # jest --runInBand (serial is required)
+npx jest test/e2e/rbac.customers.e2e.test.ts    # a single file
+npx jest -t "last active admin"                 # a single test by name
 ```
 
-- Tests use a **real SQLite file** (`data/$DB_FILE`) with nothing mocked. Each suite clears it with `DELETE FROM users` in `beforeEach`, so the tests must run serially.
-- `jest.setup.ts` loads `.env.test` first (same keys as `.env`; point `DB_FILE` at a separate test database). `.env.test` is gitignored. In CI the JWT variables come from GitHub secrets, and `DB_FILE` falls back to `database.db`.
+- Tests use a **real SQLite file** (`data/$DB_FILE`) with nothing mocked. Each suite calls `resetDb()`, which re-seeds, so the tests must run serially. Migration and seed tests use their own temp files and cover an empty database and a pre-RBAC one.
+- `rbac.*.e2e.test.ts` check 401/403/2xx for every endpoint. `rbac.customers.e2e.test.ts` covers customers (permissions per role, duplicate email or tax ID, search, PATCH, non-customer 404) and that `settings:*` is admin only.
+- `jest.setup.ts` loads `.env.test` first (gitignored). In CI the JWT variables come from GitHub secrets.
 
 ---
 
@@ -185,11 +226,12 @@ docker run --env-file .env -d -p 3000:3000 -v auth-data:/app/data auth-service
 ```
 
 - Multi-stage build on `node:20-alpine`. The builder stage installs `python3`, `make` and `g++` for the native modules (`bcrypt`, `better-sqlite3`) and compiles TypeScript. The runtime stage installs production dependencies only, runs as the `node` user and exposes port 3000.
-- All config is injected at runtime. `.dockerignore` excludes `.env*`, `*.db`, `test/`, `dist` and `node_modules`, so the image contains no secrets or local databases.
+- All config is injected at runtime. `.dockerignore` excludes `.env*`, `*.db`, `test/`, `dist` and `node_modules`.
+- Migrations and the seed run when the container starts.
 
 ### Full stack with docker compose
 
-The workspace root's `docker-compose.yml` runs postgres, auth-service, order-service and the frontend together. It reads **only the root `.env`** (copied from the root `.env.example`), never this service's `.env`. Keep the JWT values identical in both files.
+The workspace root's `docker-compose.yml` runs postgres, auth-service, order-service, product-service and the frontend. It reads **only the root `.env`**, never this service's `.env`. Keep the JWT values identical in both files.
 
 ```bash
 # from the workspace root
@@ -207,26 +249,22 @@ docker compose logs -f auth-service
 2. **docker:** build and push `etcruz/auth-service:{sha,latest}` to Docker Hub.
 3. **deploy:** trigger the Render deploy hook.
 
+**Deploy order:** this service ships first whenever it adds permissions or endpoints that others use. For example, the orders maintainer needs `customers:*`, `settings:*` and `/customers` before order-service v2 and the frontend are deployed. Set `ADMIN_EMAIL`/`ADMIN_PASSWORD` on Render before the first RBAC deploy, or no one can manage users and roles. `docs/rbac-deployment.md` has the manual steps.
+
 ---
 
 ## ⚠️ Known Issues
 
-These are documented so that they get fixed when the code is touched:
-
-- **User endpoints return bcrypt password hashes.** `UserRepository` uses `SELECT *`, so both `GET /api/v1/user` and `GET /api/v1/user/:email` include `password`. Fix: select `id, email` only, and remove `password` from the frontend `User` type in the same change.
-- **`authMiddleware` returns 403 for an expired or invalid token** and checks only the signature, not the issuer or audience. The frontend logs out only on 401, so an expired session isn't cleared on `/users`. Fix: return 401 and validate `issuer`/`audience`, as order-service does.
-- **`authMiddleware` doesn't check the `Bearer` scheme** (it takes `split(" ")[1]`), and its 401/403 bodies are plain text, not `{ message }`.
-- **Registering an existing email returns a 500**, because the SQLite `UNIQUE` violation isn't mapped to an `AppError`. It should be a 409 or 400 with a `message`.
-- There is no input validation on register or login bodies.
+- Other services can't see the `token_version`, so they accept a token until it expires even after a role change. Keep `JWT_TIMEEXP` short.
+- Customers can't sign in, and there is no password reset or self-service flow for them yet.
 
 ---
 
 ## 🔮 Future Improvements
 
-- Input validation (Zod / express-validator)
 - Refresh tokens and a server-side logout
+- Password reset (needed before customers can get their own access)
 - OpenAPI / Swagger documentation
-- Versioned SQLite migrations (`PRAGMA user_version`)
 - Observability (Prometheus, Grafana)
 
 ---
@@ -234,9 +272,10 @@ These are documented so that they get fixed when the code is touched:
 ## 🤝 Contributing
 
 - Keep the layering: routes → controllers → services → repositories. No layer skips one below it.
-- Keep every route under `/api/v1/`. A breaking change to a request or response shape needs a new version (`/api/v2/...`) served alongside v1.
-- Status codes are part of the contract: 401 only for "not authenticated", 403 for "not allowed", 404 for missing resources, 400 for validation errors. Error bodies carry `message`.
-- A contract change (route, response shape, JWT claim) needs matching commits in the frontend and/or order-service repos and coordinated deploys. Add claims first. Never remove a claim that a deployed consumer reads.
+- A new protected resource needs a `RESOURCES` entry in `data/seed.ts`, a router mounted behind `authMiddleware` in `app.ts`, and `requirePermission` on each route. Grants for existing roles go in a new `GRANT_SETS` entry.
+- A breaking change to a request or response shape needs a new version (`/api/v2/...`) served alongside v1.
+- Status codes are part of the contract: 401 only for "not authenticated", 403 for "not allowed", 404 for missing resources, 409 for conflicts, 400 for validation errors. Error bodies carry `message`.
+- A contract change (route, response shape, JWT claim, permission code) needs matching commits in the frontend, order-service and/or product-service repos, and coordinated deploys. Add first; never remove a claim or permission that a deployed consumer reads.
 
 ---
 

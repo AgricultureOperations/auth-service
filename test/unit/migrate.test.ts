@@ -40,7 +40,7 @@ describe("runMigrations", () => {
         const insert = db.prepare("INSERT INTO users (id, email, password) VALUES (?, ?, ?)");
         old.forEach((u) => insert.run(u.id, u.email, u.password));
 
-        expect(runMigrations(db)).toEqual(["001_baseline", "002_rbac"]);
+        expect(runMigrations(db)).toEqual(["001_baseline", "002_rbac", "003_customer_fields"]);
         seed(db, { log: () => {} });
 
         const users = db.prepare(`
@@ -51,6 +51,7 @@ describe("runMigrations", () => {
             expect(u).toMatchObject({
                 id: old[i].id, email: old[i].email, password: old[i].password,
                 name: old[i].email.split("@")[0], role_key: "viewer", is_active: 1, token_version: 0, last_login_at: null,
+                tax_id: null, phone: null,
             });
             expect(new Date(u.created_at as string).toISOString()).toBe(u.created_at);
         });
@@ -73,9 +74,11 @@ describe("runMigrations", () => {
 
     it("builds the schema on an empty database and is a no-op the second time", () => {
         const { db } = handle;
-        expect(runMigrations(db)).toEqual(["001_baseline", "002_rbac"]);
+        expect(runMigrations(db)).toEqual(["001_baseline", "002_rbac", "003_customer_fields"]);
         expect(runMigrations(db)).toEqual([]);
-        expect(db.prepare("SELECT id FROM schema_migrations ORDER BY id").all()).toEqual([{ id: "001_baseline" }, { id: "002_rbac" }]);
+        expect(db.prepare("SELECT id FROM schema_migrations ORDER BY id").all()).toEqual([
+            { id: "001_baseline" }, { id: "002_rbac" }, { id: "003_customer_fields" },
+        ]);
         expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
     });
 

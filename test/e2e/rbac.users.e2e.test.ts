@@ -85,6 +85,7 @@ describe("RBAC: /api/v1/user", () => {
                 id: expect.any(String), name: "Administrator", email: ADMIN.email, isActive: true,
                 role: { id: roleId("admin"), key: "admin", name: "Administrator" },
                 createdAt: expect.any(String), updatedAt: expect.any(String), lastLoginAt: expect.any(String),
+                taxId: null, phone: null,
             });
             const page2 = await list("?page=2&pageSize=5");
             expect(page2.body.meta).toEqual({ page: 2, pageSize: 5, total: 13, totalPages: 3 });
