@@ -19,7 +19,7 @@ Requests flow in one direction only: `routes → controllers → services → re
 ## Authentication and authorization
 
 - `authMiddleware` (`middlewares/auth.middleware.ts`) returns **401** `{ status, message }` for: missing header or non-`Bearer` scheme, bad signature, expired token, wrong issuer/audience, unknown or inactive user, or a `tv` claim that doesn't match `users.token_version`. It re-reads the user's role and permissions from the DB and stores them on `res.locals.auth` (`getAuth(resp)`).
-- `requirePermission("users:edit")` / `requireRole("admin")` (`middlewares/permission.middleware.ts`) run after it and return **403** `{ status, message }`. 401 makes the frontend log out; 403 doesn't, so never return 401 for "not allowed".
+- `requirePermission("users:edit")` / `requireRole("admin")` (`middlewares/permission.middleware.ts`) run after it and return **403** `{ status, message }`. 401 makes the dashboard log out; 403 doesn't, so never return 401 for "not allowed".
 - JWT payload: `{ sub, id, email, role, permissions, tv }` (`utils/jwt.ts` `TokenClaims`), HS256 with `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`. `id` duplicates `sub` for old consumers. Other services read these claims; see `docs/rbac-handoff.md`.
 - `token_version` is bumped when a user's role changes, when the user is deactivated, and for every holder of a role whose permissions change (`PUT /roles/:id/permissions`). That makes their existing tokens 401 immediately.
 
@@ -42,13 +42,13 @@ System roles: `admin` (every permission, always), `operator` (view/create/edit o
 - System roles can't be deleted or deactivated.
 - A role that still has users can't be deleted or deactivated.
 
-Registration always assigns `viewer`.
+**Public registration (`POST /auth/register`) always creates a `customer`** (the customer portal's signup). It reads only `email`, `password` (≥ 8), `name?`, `taxId?` and `phone?`, ignores anything else (a role in the body has no effect), and answers 409 for a duplicate email or tax ID. Staff accounts are created by an admin through `/user`. `/auth/login` and `/auth/register` are rate limited (`middlewares/rate-limit.middleware.ts`, 429 `{ status, message }`, skipped under `NODE_ENV=test`).
 
 ### Endpoints (all under `/api/v1`)
 
 | Method | Path | Permission |
 |---|---|---|
-| POST | `/auth/register`, `/auth/login` | public (shapes unchanged: `201 { id, email }`, `{ token }`) |
+| POST | `/auth/register` `{ email, password, name?, taxId?, phone? }` → `201 { id, email }` (customer); `/auth/login` → `{ token }` | public, rate limited |
 | GET | `/auth/me` | authenticated |
 | GET | `/user?search=&roleId=&isActive=&page=&pageSize=` → `{ data, meta: { page, pageSize, total, totalPages } }`, `/user/:id` | `users:view` |
 | POST | `/user` `{ name, email, password (≥ 8), roleId }` | `users:create` |
@@ -80,7 +80,7 @@ A new protected resource needs: a `RESOURCES` entry in `data/seed.ts` (admin pic
 - Default grants for `operator`/`viewer` are applied once, recorded in `seed_history`, so an admin's later edits survive restarts.
 - Grants added after a role already exists go in `GRANT_SETS` (e.g. `grants:customers-v1`). Each set is applied once under its own `seed_history` key, so it reaches existing Render/compose databases and an admin can still revoke it. Append a new set; never edit one that has shipped.
 - The first admin is created from `ADMIN_EMAIL`/`ADMIN_PASSWORD` only if no user has that email; an existing account is never changed.
-- Without an admin, nobody can open `/users` or `/roles` in the frontend (only `admin` has `users:*`/`roles:*`). To promote an existing account, update its `role_id` to the `admin` role and bump `token_version` by hand. `docs/rbac-deployment.md` has the query, a `docker compose exec … node -e` version (the runtime image has no `sqlite3`), a manual SQL equivalent of `002_rbac` + seed, verification queries and the rollback steps. A hand-applied migration must also insert its id into `schema_migrations`, or the next startup runs it again and fails.
+- Without an admin, nobody can open `/users` or `/roles` in the dashboard (only `admin` has `users:*`/`roles:*`). To promote an existing account, update its `role_id` to the `admin` role and bump `token_version` by hand. `docs/rbac-deployment.md` has the query, a `docker compose exec … node -e` version (the runtime image has no `sqlite3`), a manual SQL equivalent of `002_rbac` + seed, verification queries and the rollback steps. A hand-applied migration must also insert its id into `schema_migrations`, or the next startup runs it again and fails.
 
 ## Key Folder Responsibilities
 
@@ -93,13 +93,13 @@ A new protected resource needs: a `RESOURCES` entry in `data/seed.ts` (admin pic
 | `src/services/` | Business logic and guardrails (`AppError`) |
 | `src/repositories/` | Data access with synchronous prepared statements, plus `inTransaction` |
 | `src/models/` | Row types, DTOs and `to*Dto` mappers |
-| `src/middlewares/` | `authMiddleware` (401), `requirePermission`/`requireRole` (403), error handler |
+| `src/middlewares/` | `authMiddleware` (401), `requirePermission`/`requireRole` (403), `loginRateLimit`/`registerRateLimit` (429), error handler |
 | `src/utils/` | `jwt.ts` (sign/verify with iss/aud/HS256), `validation.ts`, `AppError`, `asyncHandler` |
 | `src/data/` | `database.ts`, `migrate.ts`, `migrations/`, `seed.ts` |
 | `test/helpers/db.ts` | `resetDb()`, `userWithRole(key)`, `adminToken()`, `bearer()`, `roleId()` |
 | `test/unit` | Service, migration and seed tests (the last two use their own temp DB files) |
-| `test/integration`, `test/e2e` | HTTP tests that drive `app` with Supertest (`rbac.*.e2e.test.ts` cover every endpoint for 401/403/2xx; `rbac.customers.e2e.test.ts` covers `/customers` and the `settings:*` grants) |
-| `docs/rbac-handoff.md` | Contract notes for order-service/product-service (Phase 2) and the frontend (Phase 3) |
+| `test/integration`, `test/e2e` | HTTP tests that drive `app` with Supertest (`rbac.*.e2e.test.ts` cover every endpoint for 401/403/2xx; `rbac.customers.e2e.test.ts` covers `/customers` and the `settings:*` grants; `register.e2e.test.ts` covers customer self-registration and the CORS origin list) |
+| `docs/rbac-handoff.md` | Contract notes for order-service/product-service (Phase 2) and the dashboard (Phase 3) |
 | `docs/rbac-deployment.md` | Deploying `002_rbac` to another environment: backup, first admin, manual SQL, admin promotion, verification, rollback |
 
 ## Build & Run Commands
@@ -126,6 +126,7 @@ npx jest -t "last active admin"            # by test name
 
 - `jest.setup.ts` loads `.env.test` first, and the later `dotenv.config()` in `jwt.ts` does not override those values. It also defaults `ADMIN_EMAIL`/`ADMIN_PASSWORD` to test-only values when they're unset.
 - The HTTP tests use a real SQLite file (`data/$DB_FILE`) with nothing mocked. Each suite calls `resetDb()` in `beforeEach`, which deletes users and custom roles and re-seeds. That shared file is why tests must run serially.
+- **Known flakiness:** about one full run in six fails a random HTTP test with `socket hang up` (Supertest connection error, not an assertion); the same file passes alone. Rerun before debugging.
 - `.env.test` is gitignored, so CI runs without it: JWT variables come from GitHub secrets and `DB_FILE` falls back to `database.db`.
 
 ## Environment
@@ -134,7 +135,8 @@ Variables are listed in `.env.example`:
 - `PORT`
 - `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_TIMEEXP`
 - `DB_FILE`
-- `FRONTEND_URL`: the CORS origin. Defaults to `http://localhost:5173`; set to `https://agricultureops.netlify.app` on Render.
+- `FRONTEND_URL`: the allowed CORS origins, **comma-separated** (`allowedOrigins()` in `app.ts`): the internal dashboard and the customer portal. Defaults to `http://localhost:5173,http://localhost:3100`; on Render set `https://agricultureops.netlify.app,<portal URL>`.
+- `LOGIN_RATE_LIMIT` (default 20) and `REGISTER_RATE_LIMIT` (default 10): requests per client IP per 15 minutes on the public auth endpoints. `app.set("trust proxy", 1)` reads the client IP behind Render's proxy.
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD`: the first admin. Optional once an admin exists.
 
 `jwt.ts` reads the JWT variables once, at module load. CORS allows `GET`, `POST`, `PUT`, `PATCH` and `DELETE`.

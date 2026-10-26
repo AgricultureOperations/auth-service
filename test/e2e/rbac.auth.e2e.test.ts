@@ -21,14 +21,14 @@ describe("RBAC: tokens and authentication", () => {
         expect(claims.exp).toBeGreaterThan(claims.iat!);
     });
 
-    it("registration always assigns viewer, even when the body asks for admin", async () => {
+    it("registration always assigns customer (no permissions), even when the body asks for admin", async () => {
         const resp = await request(app).post("/api/v1/auth/register")
             .send({ email: "sneaky@agriops.test", password: PASSWORD, roleId: roleId("admin"), role: "admin" });
         expect(resp.status).toBe(201);
         expect(resp.body).toEqual({ id: expect.any(String), email: "sneaky@agriops.test" });
 
         const claims = jwt.decode(await login("sneaky@agriops.test")) as jwt.JwtPayload;
-        expect(claims).toMatchObject({ role: "viewer", permissions: ["customers:view", "orders:view", "products:view"] });
+        expect(claims).toMatchObject({ role: "customer", permissions: [] });
     });
 
     it("GET /auth/me returns the caller with role and permissions, never the password", async () => {

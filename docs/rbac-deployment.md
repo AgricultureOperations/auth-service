@@ -14,7 +14,7 @@ before a deploy) or to check the result.
 2. **Set `ADMIN_EMAIL` / `ADMIN_PASSWORD`** (min 8 characters) to an email that is **not registered yet**. Existing
    users are moved to `viewer`, and the seed never changes an existing account. Without an admin, no one can open
    `/users` or `/roles`. To promote an existing account instead, see [Promote a user to admin](#promote-a-user-to-admin).
-3. **Deploy auth-service before the frontend.** Every token issued before the deploy has no `tv` claim, so it gets
+3. **Deploy auth-service before the dashboard.** Every token issued before the deploy has no `tv` claim, so it gets
    one 401 and the user logs in again.
 
 ## Option A: automatic (recommended)

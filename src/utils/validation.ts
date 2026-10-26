@@ -2,6 +2,9 @@ import { AppError } from "./AppError";
 
 // Request validation helpers. Each one throws AppError(..., 400) so controllers stay one-liners.
 
+// Cédula, RUC or passport; the same rule as order-service's CustomerSnapshot. Stored upper-cased.
+const TAX_ID = /^[A-Za-z0-9-]{5,20}$/;
+
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,6 +41,22 @@ export const requireEmail = (value: unknown): string => {
     const email = requireString(value, "email", { max: 254 });
     if (!EMAIL.test(email)) throw new AppError("email must be a valid email address", 400);
     return email;
+};
+
+// undefined = not sent (keep), null or "" = clear.
+export const optionalTaxId = (value: unknown): string | null | undefined => {
+    if (value === undefined) return undefined;
+    if (value === null || (typeof value === "string" && value.trim() === "")) return null;
+    if (typeof value !== "string" || !TAX_ID.test(value.trim())) {
+        throw new AppError("taxId must be 5 to 20 letters, digits or dashes", 400);
+    }
+    return value.trim().toUpperCase();
+};
+
+export const optionalPhone = (value: unknown): string | null | undefined => {
+    if (value === undefined) return undefined;
+    if (value === null || (typeof value === "string" && value.trim() === "")) return null;
+    return requireString(value, "phone", { max: 30 });
 };
 
 export const requireBoolean = (value: unknown, field: string): boolean => {

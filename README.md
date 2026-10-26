@@ -8,17 +8,19 @@ It is built with **Express 5**, **TypeScript** (strict, CommonJS) and **SQLite**
 
 ## 🌐 Place in the AgriOps Platform
 
-AgriOps is made of four independent services, each in its own repository with its own CI/CD:
+AgriOps is made of five independent apps and services, each in its own repository with its own CI/CD:
 
-| Service | Stack | Role |
-|---|---|---|
-| **auth-service** (this repo) | Express 5 + TypeScript + SQLite | Login, JWT issuance, users, roles & permissions, customers |
-| [order-service](https://github.com/edwardcruzcruz/order-service) | ASP.NET Core (.NET 9) + PostgreSQL | Sales orders: lines, workflow, order numbering |
-| product-service | NestJS 11 + Prisma + PostgreSQL | Product catalog |
-| [agriops-web](https://github.com/edwardcruzcruz/agriops-web) | React 18 + Vite | Back-office SPA for every backend |
+| App / service | Repository | Stack | Role |
+|---|---|---|---|
+| **auth-service** (this repo) | [edwardcruzcruz/typescript-jwt-auth-api](https://github.com/edwardcruzcruz/typescript-jwt-auth-api) | Express 5 + TypeScript + SQLite | Login, JWT issuance, users, roles & permissions (RBAC), customers |
+| order-service | [edwardcruzcruz/order-service](https://github.com/edwardcruzcruz/order-service) | ASP.NET Core (.NET 9) + PostgreSQL | Sales orders: lines, status workflow, soft delete, yearly order numbering |
+| product-service | [AgricultureOperations/product-service](https://github.com/AgricultureOperations/product-service) | NestJS 11 + Prisma + PostgreSQL | Product catalog (inputs, harvest, equipment) |
+| dashboard | [edwardcruzcruz/agriops-web](https://github.com/edwardcruzcruz/agriops-web) | React 18 + Vite | Internal back office (staff) for every backend |
+| frontend | not on GitHub yet | Next.js 16, static export | Public customer portal: signup, login, account |
 
 ```
-frontend ──(login, users, roles, customers)──▶ auth-service    ──issues JWT──┐
+dashboard ──(login, users, roles, customers)─▶ auth-service    ──issues JWT──┐
+    │                       frontend (customer portal) ──(register, login, me)──▶ auth-service
     │                                                                        │ shared secret/issuer/audience
     ├──(Bearer JWT, orders)──────────────────▶ order-service   ◀─validates───┤
     └──(Bearer JWT, products)────────────────▶ product-service ◀─validates───┘
@@ -59,9 +61,9 @@ routes → controllers → services → repositories → SQLite
 Conventions:
 - **No DI container.** Controllers create services at module level, and services create repositories as class fields.
 - **Errors** are `{ status: "error", message }` with the right status. Clients read only `message`.
-- **401 vs 403.** `authMiddleware` returns 401 for a missing, invalid, expired or stale token (the frontend then logs out). `requirePermission` returns 403 for "signed in but not allowed" (the session is kept).
+- **401 vs 403.** `authMiddleware` returns 401 for a missing, invalid, expired or stale token (the dashboard then logs out). `requirePermission` returns 403 for "signed in but not allowed" (the session is kept).
 - **Responses never contain `password`.** Only the login query reads the hash.
-- **All routes live under `/api/v1/`.** The frontend exempts `/api/v1/auth/login` from its 401 logout handling by exact path, so don't rename that route.
+- **All routes live under `/api/v1/`.** The dashboard exempts `/api/v1/auth/login` from its 401 logout handling by exact path, so don't rename that route.
 
 ---
 
@@ -81,7 +83,7 @@ src/
  └── data/               # database.ts, migrate.ts, migrations/ (001_baseline, 002_rbac, 003_customer_fields), seed.ts
 
 docs/
- ├── rbac-handoff.md     # Contract notes for order-service, product-service and the frontend
+ ├── rbac-handoff.md     # Contract notes for order-service, product-service and the dashboard
  └── rbac-deployment.md  # Deploying RBAC to another environment: backup, first admin, manual SQL, rollback
 
 test/
@@ -102,12 +104,12 @@ Permissions are `"<resource>:<action>"` codes: resources `products`, `orders`, `
 | `admin` | Everything, always (its permissions can't be reduced) |
 | `operator` | view/create/edit on `products`, `orders` and `customers` |
 | `viewer` | view on `products`, `orders` and `customers` |
-| `customer` | none: a buyer referenced by orders, with no back-office access |
+| `customer` | none: a buyer referenced by orders. Signs in to the customer portal only |
 
 - `settings:*` (e.g. order-service's order number prefix) is **admin only** by default.
-- Admins can create custom roles and change any non-admin role's permissions from the frontend's Roles screen.
+- Admins can create custom roles and change any non-admin role's permissions from the dashboard's Roles screen.
 - Guardrails (409): the last active admin can't be demoted, deactivated or deleted; system roles can't be deleted or deactivated; a role with users can't be deleted or deactivated.
-- Registration always assigns `viewer`.
+- Public registration (the customer portal) always creates a `customer`, whatever the body says. Staff accounts are created by an admin through `/user`.
 - Changing a user's role, deactivating them or changing a role's permissions bumps the `token_version`, so existing tokens stop working here immediately. Other services honour a token until it expires, so keep `JWT_TIMEEXP` short.
 
 ---
@@ -118,8 +120,8 @@ Base path: `/api/v1`. Bodies are JSON, camelCase and unwrapped (no `{ success, d
 
 | Method | Path | Permission | Success |
 |---|---|---|---|
-| `POST` | `/auth/register` `{ email, password }` | public | 201 `{ id, email }` |
-| `POST` | `/auth/login` `{ email, password }` | public | 200 `{ token }` |
+| `POST` | `/auth/register` `{ email, password, name?, taxId?, phone? }` | public, rate limited | 201 `{ id, email }`: always a **customer** |
+| `POST` | `/auth/login` `{ email, password }` | public, rate limited | 200 `{ token }` |
 | `GET` | `/auth/me` | signed in | 200 `UserDto` + `permissions: string[]` |
 | `GET` | `/user?search=&roleId=&isActive=&page=&pageSize=`, `/user/:id` | `users:view` | 200 |
 | `POST` | `/user` `{ name, email, password, roleId }` | `users:create` | 201 `UserDto` |
@@ -138,7 +140,7 @@ Base path: `/api/v1`. Bodies are JSON, camelCase and unwrapped (no `{ success, d
 
 ### Customers
 
-- A customer is a user with the `customer` role. It gets a random password nobody knows, so it can't sign in.
+- A customer is a user with the `customer` role. Customers created by staff (`POST /customers`) get a random password nobody knows; customers who sign up in the portal (`POST /auth/register`) choose their own and can sign in there. Neither can use the dashboard.
 - `taxId` (cédula, RUC or passport) is 5–20 letters, digits or dashes, is stored upper-cased, and is unique. A duplicate email or tax ID returns 409.
 - In a PATCH, `null` clears `taxId` or `phone`. The email can't be changed, and a non-customer id returns 404.
 - `search` matches name, email or tax ID, and `/user?search=` matches tax IDs too.
@@ -170,7 +172,7 @@ HS256 tokens with payload `{ sub, id, email, role, permissions, tv }` plus `iss`
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/AgricultureOperations/auth-service.git auth-service
+git clone https://github.com/edwardcruzcruz/typescript-jwt-auth-api.git auth-service
 cd auth-service
 npm install          # use Node 24 (CI's version): better-sqlite3 is a native module
 ```
@@ -187,7 +189,8 @@ Copy `.env.example` to `.env` and fill it in:
 | `JWT_AUDIENCE` | Token audience, `orders-api` |
 | `JWT_TIMEEXP` | Token lifetime, e.g. `1h` |
 | `DB_FILE` | SQLite file name inside `data/` (default `database.db`) |
-| `FRONTEND_URL` | The only allowed CORS origin. Default `http://localhost:5173`. On Render: `https://agricultureops.netlify.app` |
+| `FRONTEND_URL` | Allowed CORS origins, comma-separated: the dashboard and the customer portal. Default `http://localhost:5173,http://localhost:3100`. On Render: `https://agricultureops.netlify.app,<portal URL>` |
+| `LOGIN_RATE_LIMIT`, `REGISTER_RATE_LIMIT` | Requests per IP per 15 minutes on `/auth/login` (default 20) and `/auth/register` (default 10) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The first admin, created on startup if no user has that email. Optional once an admin exists |
 
 `.env*` files (except `.env.example`) and `*.db` files are gitignored and excluded from the Docker build context. Never commit them.
@@ -231,7 +234,7 @@ docker run --env-file .env -d -p 3000:3000 -v auth-data:/app/data auth-service
 
 ### Full stack with docker compose
 
-The workspace root's `docker-compose.yml` runs postgres, auth-service, order-service, product-service and the frontend. It reads **only the root `.env`**, never this service's `.env`. Keep the JWT values identical in both files.
+The workspace root's `docker-compose.yml` runs postgres, auth-service, order-service, product-service, the dashboard and the customer portal (frontend). It reads **only the root `.env`**, never this service's `.env`. Keep the JWT values identical in both files.
 
 ```bash
 # from the workspace root
@@ -249,21 +252,22 @@ docker compose logs -f auth-service
 2. **docker:** build and push `etcruz/auth-service:{sha,latest}` to Docker Hub.
 3. **deploy:** trigger the Render deploy hook.
 
-**Deploy order:** this service ships first whenever it adds permissions or endpoints that others use. For example, the orders maintainer needs `customers:*`, `settings:*` and `/customers` before order-service v2 and the frontend are deployed. Set `ADMIN_EMAIL`/`ADMIN_PASSWORD` on Render before the first RBAC deploy, or no one can manage users and roles. `docs/rbac-deployment.md` has the manual steps.
+**Deploy order:** this service ships first whenever it adds permissions or endpoints that others use. For example, the orders maintainer needs `customers:*`, `settings:*` and `/customers` before order-service v2 and the dashboard are deployed. The customer portal needs the customer self-registration and `FRONTEND_URL` including its origin. Set `ADMIN_EMAIL`/`ADMIN_PASSWORD` on Render before the first RBAC deploy, or no one can manage users and roles. `docs/rbac-deployment.md` has the manual steps.
 
 ---
 
 ## ⚠️ Known Issues
 
 - Other services can't see the `token_version`, so they accept a token until it expires even after a role change. Keep `JWT_TIMEEXP` short.
-- Customers can't sign in, and there is no password reset or self-service flow for them yet.
+- There is no email verification or password reset yet: anyone can register a customer with any email (they get no back-office access), and a customer created by staff has no usable password until a reset flow exists.
 
 ---
 
 ## 🔮 Future Improvements
 
 - Refresh tokens and a server-side logout
-- Password reset (needed before customers can get their own access)
+- Email verification and password reset (needs a mail service)
+- `PATCH /auth/me` so customers can update their own phone from the portal
 - OpenAPI / Swagger documentation
 - Observability (Prometheus, Grafana)
 
@@ -275,7 +279,7 @@ docker compose logs -f auth-service
 - A new protected resource needs a `RESOURCES` entry in `data/seed.ts`, a router mounted behind `authMiddleware` in `app.ts`, and `requirePermission` on each route. Grants for existing roles go in a new `GRANT_SETS` entry.
 - A breaking change to a request or response shape needs a new version (`/api/v2/...`) served alongside v1.
 - Status codes are part of the contract: 401 only for "not authenticated", 403 for "not allowed", 404 for missing resources, 409 for conflicts, 400 for validation errors. Error bodies carry `message`.
-- A contract change (route, response shape, JWT claim, permission code) needs matching commits in the frontend, order-service and/or product-service repos, and coordinated deploys. Add first; never remove a claim or permission that a deployed consumer reads.
+- A contract change (route, response shape, JWT claim, permission code) needs matching commits in the dashboard, the customer portal (frontend), order-service and/or product-service repos, and coordinated deploys. Add first; never remove a claim or permission that a deployed consumer reads.
 
 ---
 

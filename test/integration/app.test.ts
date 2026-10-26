@@ -10,7 +10,7 @@ describe("Auth API", () => {
     it("should register user", async () => {
         const resp = await request(app)
         .post("/api/v1/auth/register")
-        .send({email:"edward.cruzcruz27041996@gmail.com", password: "ecruz22"})
+        .send({email:"edward.cruzcruz27041996@gmail.com", password: "ecruz2222"})
     
         expect(resp.status).toBe(201);
     });

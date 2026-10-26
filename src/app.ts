@@ -11,16 +11,23 @@ import { errorMiddleware } from "./middlewares/error.middleware";
 
 dotenv.config();
 
-// Deployed (Render): set FRONTEND_URL=https://agricultureops.netlify.app. Local dev falls back to Vite.
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+// Allowed browser origins, comma-separated: the internal dashboard and the customer portal (frontend).
+// Render: FRONTEND_URL=https://agricultureops.netlify.app,<portal URL>. Local dev falls back to both Vite and Next.
+export const allowedOrigins = (value = process.env.FRONTEND_URL) =>
+  (value || "http://localhost:5173,http://localhost:3100")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
 const app = express();
 const cors = require("cors");
 app.use(express.json());
+// Render terminates TLS in front of the app; the rate limiter needs the client IP from X-Forwarded-For.
+app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: allowedOrigins(),
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true, // only needed if using cookies
   })

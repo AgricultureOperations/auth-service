@@ -34,7 +34,7 @@ Resources today: `products`, `orders`, `users`, `roles`, `customers`, `settings`
   | `PUT`/`PATCH` | `<resource>:edit` |
   | `DELETE` | `<resource>:delete` |
 
-- **401 vs 403** (the frontend logs out on any 401 except login):
+- **401 vs 403** (the dashboard logs out on any 401 except login):
   - **401**: no token, bad signature, expired, wrong issuer/audience. This is already what `[Authorize]` / `JwtAuthGuard` do.
   - **403** with `{ message }`: a valid token without the needed permission. Never 401 for this.
 - **Stale tokens.** Downstream services can't check `tv`, which lives in auth-service's DB. Don't call auth-service to check it (architecture rule: no backend-to-backend calls). After a role or permission change, a downstream service keeps honouring the old token until `exp`, so keep `JWT_TIMEEXP` short (1h today). auth-service itself rejects stale tokens immediately.
@@ -42,9 +42,9 @@ Resources today: `products`, `orders`, `users`, `roles`, `customers`, `settings`
 - **Acting user vs. customer.** Take the acting user from `sub` (order-service's `CreatedBy`/`UpdatedBy`/`DeletedBy`), never from the request body. `Order.CustomerId` is something else: the buyer, an auth-service user with the `customer` role, which the frontend picks from `/api/v1/customers` and order-service stores together with a snapshot.
 - **Tests.** Sign test tokens with the same claims; include a token that has the resource's `view` but not `edit`.
 
-## Phase 3: frontend
+## Phase 3: dashboard (internal back office, formerly `frontend/`)
 
-### Contract changes to mirror (`frontend/src/features/users/interfaces/`, new `roles` feature)
+### Contract changes to mirror (`dashboard/src/features/users/interfaces/`, new `roles` feature)
 - `GET /api/v1/user` now returns `{ data: User[], meta: { page, pageSize, total, totalPages } }`, paginated server-side.
   - Query params: `search`, `roleId`, `isActive`, `page`, `pageSize` (1–100, default 10).
   - `User` = `{ id, name, email, isActive, role: { id, key, name }, createdAt, updatedAt, lastLoginAt }`, with no `password`. This fixes drift #1.
