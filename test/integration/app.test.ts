@@ -14,4 +14,11 @@ describe("Auth API", () => {
     
         expect(resp.status).toBe(201);
     });
+
+    it("reports health without a token: no pending migrations on the migrated test DB", async () => {
+        const resp = await request(app).get("/api/v1/health");
+
+        expect(resp.status).toBe(200);
+        expect(resp.body).toEqual({ status: "ok", pendingMigrations: 0 });
+    });
 });

@@ -1,9 +1,14 @@
 # Deploying RBAC (migration `002_rbac`) to another environment
 
-auth-service applies its own schema changes. On startup, `src/data/database.ts` runs every migration missing from
-`schema_migrations` (`src/data/migrate.ts`), then runs the idempotent seed (`src/data/seed.ts`). **Deploying the new
-image is normally enough.** Use the SQL below only to apply the migration by hand (for example, to prepare a database
-before a deploy) or to check the result.
+> **Update (2026-11): migrations no longer run on startup.** Apply them with the migration command, which records
+> who ran each one, takes a backup first and runs the seed afterwards:
+> `node scripts/migration.js up --user <you> --yes` (in the Render Shell or the container), or
+> `APP_ENV=DEV auth-service/scripts/migration.js up` locally. See "Migrations and seed" in `CLAUDE.md`.
+> The manual SQL below is kept for reference only: running it by hand bypasses `migration_history`. A database whose
+> ids are only in `schema_migrations` is picked up automatically (imported as batch 0 on the first `up`).
+
+auth-service's schema changes live in `migrations/*.sql` and are applied by `scripts/migration.js`, which then runs the
+idempotent seed (`src/data/seed.ts`). Use the SQL below only to check the result.
 
 ## Before you deploy
 

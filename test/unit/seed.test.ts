@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runMigrations } from "../../src/data/migrate";
+import { runPending } from "../../src/data/migrator";
 import { seed } from "../../src/data/seed";
 
 const ADMIN = { adminEmail: "first-admin@agriops.test", adminPassword: "Admin-Pass-123", log: () => {} };
@@ -25,7 +25,7 @@ describe("seed", () => {
         file = path.join(os.tmpdir(), `auth-seed-${crypto.randomUUID()}.db`);
         db = new Database(file);
         db.pragma("foreign_keys = ON");
-        runMigrations(db);
+        runPending(db, { user: "jest", appEnv: "TEST", backupDir: null });
     });
     afterEach(() => { db.close(); fs.rmSync(file, { force: true }); });
 

@@ -80,7 +80,11 @@ src/
  ├── models/             # Row types, DTOs and to*Dto mappers (UserDto, CustomerDto, RoleDto, …)
  ├── middlewares/        # authMiddleware (401), requirePermission / requireRole (403), errorMiddleware
  ├── utils/              # jwt.ts, validation.ts, AppError, asyncHandler
- └── data/               # database.ts, migrate.ts, migrations/ (001_baseline, 002_rbac, 003_customer_fields), seed.ts
+ ├── cli/migration.ts    # The migration command (status, up, history, verify, make)
+ └── data/               # database.ts, migrator.ts (migration engine), seed.ts
+
+migrations/             # SQL migrations NNN_snake_case.sql (001_baseline, 002_rbac, 003_customer_fields), applied by command only
+scripts/migration.js    # Executable launcher: APP_ENV=DEV auth-service/scripts/migration.js status
 
 docs/
  ├── rbac-handoff.md     # Contract notes for order-service, product-service and the dashboard
@@ -155,11 +159,25 @@ HS256 tokens with payload `{ sub, id, email, role, permissions, tv }` plus `iss`
 ## 🗄 Database
 
 - SQLite file at `<cwd>/data/$DB_FILE` (default `database.db`). In the container that is `/app/data/$DB_FILE`; mount a **named volume** at `/app/data` so the data outlives the container.
-- **Migrations** (`src/data/migrations/`, listed in `index.ts`) run on every startup, each in its own transaction, and are recorded in `schema_migrations`:
+- **Migrations** are SQL files in `migrations/`, applied **only by command** (never on startup), each in its own transaction:
   - `001_baseline`: the original `users` table.
   - `002_rbac`: the RBAC tables; existing users become `viewer`.
   - `003_customer_fields`: nullable `users.tax_id` (unique when set) and `users.phone`.
-  - Never edit or reorder a migration that has shipped; add a new one with nullable or defaulted columns.
+  - Never edit, rename or reorder a migration once it has been applied anywhere; add a new one with nullable or defaulted columns.
+- **The migration command** (run from any folder, Node 24; `--help` lists everything):
+  ```bash
+  APP_ENV=DEV auth-service/scripts/migration.js status        # applied (batch, user, date, env) or pending
+  APP_ENV=DEV auth-service/scripts/migration.js up            # apply all pending, then seed
+  APP_ENV=DEV auth-service/scripts/migration.js auth-service/migrations/004_x.sql   # only the next pending file
+  APP_ENV=DEV auth-service/scripts/migration.js history       # every attempt, including failures
+  APP_ENV=DEV auth-service/scripts/migration.js verify        # exit 1 if an applied file was edited or deleted
+  auth-service/scripts/migration.js make add_user_locale      # new numbered file
+  ```
+  - `APP_ENV`: `DEV` (`.env`), `TEST` (`.env.test`) or `PROD` (`.env.production`, optional; the default inside the image). PROD needs `--yes` and `--user <name>` (or `MIGRATION_USER`).
+  - Every run is recorded in the `migration_history` table: who (`--user`, `MIGRATION_USER`, your git email or OS user), environment, host, start/end time, duration, file checksum, batch, status and error.
+  - Before applying, `up` saves a copy of the database in `data/backups/<timestamp>-before-<id>.db`. There are no down migrations: restore that copy to roll back.
+  - With migrations pending, the server still starts but logs them, skips the seed and reports them at `GET /api/v1/health` (`{ status: "migrations_pending", pendingMigrations: n }`).
+  - On Render: after the deploy, open the Shell and run `node scripts/migration.js up --user <you> --yes`.
 - **Seed** (`src/data/seed.ts`) runs after the migrations and is idempotent:
   - It creates the actions, resources, permissions and system roles, and re-grants admin every permission.
   - Default grants are applied once per role. Grants added later (`GRANT_SETS`, e.g. `grants:customers-v1`) are applied once to existing databases too. Both are recorded in `seed_history`, so an admin's later changes survive restarts.

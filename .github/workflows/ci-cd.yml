@@ -5,6 +5,8 @@ on:
     branches: [ main ]
     paths:
       - 'src/**'
+      - 'migrations/**'
+      - 'scripts/**'
       - 'test/**'
       - 'package.json'
       - 'package-lock.json'

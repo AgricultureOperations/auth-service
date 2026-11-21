@@ -32,6 +32,10 @@ RUN npm ci --omit=dev
 # Copy compiled app
 COPY --from=builder /app/dist ./dist
 
+# Migrations are applied by command, never on startup: node scripts/migration.js up --user <you> --yes
+COPY migrations ./migrations
+COPY scripts ./scripts
+
 USER node
 
 EXPOSE 3000

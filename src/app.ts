@@ -8,6 +8,7 @@ import permissionRoutes from "./routes/permission.routes";
 import customerRoutes from "./routes/customer.routes";
 import { authMiddleware } from "./middlewares/auth.middleware";
 import { errorMiddleware } from "./middlewares/error.middleware";
+import { pendingMigrationIds } from "./data/database";
 
 dotenv.config();
 
@@ -36,6 +37,12 @@ app.use(
 /*app.get("/", (req, res) => {
   res.send("Hello World!!!");
 });*/
+
+// Public. Only the count of pending migrations, not their names.
+app.get("/api/v1/health", (req, res) => {
+  const pending = pendingMigrationIds().length;
+  res.json({ status: pending ? "migrations_pending" : "ok", pendingMigrations: pending });
+});
 
 app.use("/api/v1/auth",authRoutes);
 app.use("/api/v1/user",authMiddleware,userRoutes);
