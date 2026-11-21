@@ -28,7 +28,7 @@ Requests flow in one direction only: `routes → controllers → services → re
 | Table | Notes |
 |---|---|
 | `actions` | `view`, `create`, `edit`, `delete` |
-| `resources` | `products`, `orders`, `users`, `roles`, `customers`, `settings` (`sort_order` 10, 20, …) |
+| `resources` | `products`, `orders`, `users`, `roles`, `customers`, `settings`, `assistant` (`sort_order` 10, 20, …) |
 | `permissions` | one per resource × action, `code` = `"<resource>:<action>"` |
 | `roles` | `key` (slug, immutable, used in the JWT), `name`, `description`, `is_system`, `is_active` |
 | `role_permissions` | `granted_at`, `granted_by` (user, `SET NULL` on delete) |
@@ -36,7 +36,7 @@ Requests flow in one direction only: `routes → controllers → services → re
 
 All ids are UUID v4 text (`crypto.randomUUID()`), and all timestamps are ISO 8601 UTC text.
 
-System roles: `admin` (every permission, always), `operator` (view/create/edit on products, orders and customers), `viewer` (view on products, orders and customers), `customer` (no permissions: buyers referenced by order-service orders). `settings:*` belongs to admin only by default. Guardrails (409):
+System roles: `admin` (every permission, always), `operator` (view/create/edit on products, orders and customers), `viewer` (view on products, orders and customers), `customer` (no permissions: buyers referenced by order-service orders). `settings:*` belongs to admin only by default. `assistant:view` + `assistant:create` (assistant-service's chat, `grants:assistant-v1`) go to operator and viewer; each user only ever sees their own conversations, so there is no history permission. Guardrails (409):
 - Nobody can demote, deactivate or delete the last active admin.
 - The admin role's permissions can't be reduced.
 - System roles can't be deleted or deactivated.
@@ -93,7 +93,7 @@ A new protected resource needs: a `RESOURCES` entry in `data/seed.ts` (admin pic
 - `003_customer_fields` adds nullable `users.tax_id` and `users.phone`, plus a partial unique index on `tax_id`.
 - `seed.ts` is idempotent and matches rows by key/name, never by id. It upserts actions and resources, creates any missing `resource:action` permissions and system roles, and re-grants admin every permission.
 - Default grants for `operator`/`viewer` are applied once, recorded in `seed_history`, so an admin's later edits survive restarts.
-- Grants added after a role already exists go in `GRANT_SETS` (e.g. `grants:customers-v1`). Each set is applied once under its own `seed_history` key, so it reaches existing Render/compose databases and an admin can still revoke it. Append a new set; never edit one that has shipped.
+- Grants added after a role already exists go in `GRANT_SETS` (e.g. `grants:customers-v1`, `grants:assistant-v1`). Each set is applied once under its own `seed_history` key, so it reaches existing Render/compose databases and an admin can still revoke it. Append a new set; never edit one that has shipped.
 - The first admin is created from `ADMIN_EMAIL`/`ADMIN_PASSWORD` only if no user has that email; an existing account is never changed.
 - Without an admin, nobody can open `/users` or `/roles` in the dashboard (only `admin` has `users:*`/`roles:*`). To promote an existing account, update its `role_id` to the `admin` role and bump `token_version` by hand. `docs/rbac-deployment.md` has the query, a `docker compose exec … node -e` version (the runtime image has no `sqlite3`), verification queries and the rollback steps. Apply schema changes with `scripts/migration.js`, never with hand-written SQL in a shell, so they are recorded in `migration_history`.
 

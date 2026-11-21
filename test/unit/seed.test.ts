@@ -37,18 +37,18 @@ describe("seed", () => {
         seed(db, ADMIN);
         expect(counts(db)).toEqual(first);
         expect(db.prepare("SELECT id, code FROM permissions ORDER BY code").all()).toEqual(ids);
-        expect(first).toMatchObject({ actions: 4, resources: 6, permissions: 24, roles: 4, users: 1 });
+        expect(first).toMatchObject({ actions: 4, resources: 7, permissions: 28, roles: 4, users: 1 });
     });
 
     it("grants admin everything, operator view/create/edit and viewer view on products and orders", () => {
         seed(db, ADMIN);
-        expect(grants(db, "admin")).toHaveLength(24);
+        expect(grants(db, "admin")).toHaveLength(28);
         expect(grants(db, "operator")).toEqual([
-            "customers:create", "customers:edit", "customers:view",
+            "assistant:create", "assistant:view", "customers:create", "customers:edit", "customers:view",
             "orders:create", "orders:edit", "orders:view", "products:create", "products:edit", "products:view",
         ]);
-        expect(grants(db, "viewer")).toEqual(["customers:view", "orders:view", "products:view"]);
-        // Customers have no back-office permissions, and only admin gets settings:*.
+        expect(grants(db, "viewer")).toEqual(["assistant:create", "assistant:view", "customers:view", "orders:view", "products:view"]);
+        // Customers have no back-office permissions (assistant included), and only admin gets settings:*.
         expect(grants(db, "customer")).toEqual([]);
         expect(db.prepare("SELECT key FROM roles WHERE is_system = 1 ORDER BY key").all()).toEqual([
             { key: "admin" }, { key: "customer" }, { key: "operator" }, { key: "viewer" },
@@ -74,6 +74,18 @@ describe("seed", () => {
         expect(grants(db, "operator")).not.toContain("customers:edit");
     });
 
+    it("grants the assistant to operator and viewer on a database seeded before grants:assistant-v1", () => {
+        seed(db, ADMIN);
+        db.prepare("DELETE FROM seed_history WHERE key = 'grants:assistant-v1'").run();
+        db.prepare("DELETE FROM role_permissions WHERE permission_id IN (SELECT id FROM permissions WHERE code LIKE 'assistant:%')").run();
+        seed(db, ADMIN);
+        for (const role of ["operator", "viewer"]) {
+            expect(grants(db, role).filter((c) => c.startsWith("assistant:"))).toEqual(["assistant:create", "assistant:view"]);
+        }
+        expect(grants(db, "admin").filter((c) => c.startsWith("assistant:"))).toHaveLength(4);
+        expect(grants(db, "customer")).toEqual([]);
+    });
+
     it("keeps an admin's edits to a system role's grants across re-seeds", () => {
         seed(db, ADMIN);
         db.prepare(`
@@ -87,7 +99,7 @@ describe("seed", () => {
         seed(db, ADMIN);
         db.prepare("DELETE FROM role_permissions WHERE role_id = (SELECT id FROM roles WHERE key = 'admin')").run();
         seed(db, ADMIN);
-        expect(grants(db, "admin")).toHaveLength(24);
+        expect(grants(db, "admin")).toHaveLength(28);
     });
 
     it("creates the first admin once and never escalates an existing account", () => {

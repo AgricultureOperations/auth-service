@@ -16,7 +16,7 @@ describe("RBAC: tokens and authentication", () => {
 
         expect(claims.sub).toBe(claims.id);
         expect(claims).toMatchObject({ email: ADMIN.email, role: "admin", tv: 0 });
-        expect(claims.permissions).toHaveLength(24);
+        expect(claims.permissions).toHaveLength(28);
         expect(claims.permissions).toEqual(expect.arrayContaining(["users:delete", "roles:edit", "orders:view"]));
         expect(claims.exp).toBeGreaterThan(claims.iat!);
     });
@@ -36,9 +36,20 @@ describe("RBAC: tokens and authentication", () => {
         const resp = await me(await adminToken());
         expect(resp.status).toBe(200);
         expect(resp.body).toMatchObject({ email: ADMIN.email, name: "Administrator", isActive: true, role: { key: "admin" } });
-        expect(resp.body.permissions).toHaveLength(24);
+        expect(resp.body.permissions).toHaveLength(28);
         expect(resp.body.lastLoginAt).toEqual(expect.any(String));
         expect(JSON.stringify(resp.body)).not.toContain("password");
+    });
+
+    it("lets every staff role use the assistant, and no customer", async () => {
+        for (const roleKey of ["operator", "viewer"]) {
+            const { token } = await userWithRole(roleKey);
+            const resp = await me(token);
+            expect(resp.body.permissions).toEqual(expect.arrayContaining(["assistant:view", "assistant:create"]));
+            expect(resp.body.permissions).not.toContain("assistant:edit");
+        }
+        const customer = await userWithRole("customer");
+        expect((jwt.decode(customer.token) as jwt.JwtPayload).permissions).toEqual([]);
     });
 
     it.each([

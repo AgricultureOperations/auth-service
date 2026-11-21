@@ -18,6 +18,7 @@ export const RESOURCES = [
     { key: "roles", name: "Roles & permissions", description: "Roles and their permissions" },
     { key: "customers", name: "Customers", description: "Buyers: users with the customer role, referenced by orders" },
     { key: "settings", name: "Settings", description: "System configuration, e.g. the order number prefix (order-service)" },
+    { key: "assistant", name: "Asistente IA", description: "Chat assistant (assistant-service): view your conversations, ask questions" },
 ];
 
 export const ADMIN_ROLE = "admin";
@@ -48,6 +49,14 @@ export const GRANT_SETS: { key: string; grants: Record<string, string[]> }[] = [
         grants: {
             operator: ["customers:view", "customers:create", "customers:edit"],
             viewer: ["customers:view"],
+        },
+    },
+    {
+        // Every staff role can chat; each user only ever sees their own conversations (no admin view).
+        key: "grants:assistant-v1",
+        grants: {
+            operator: ["assistant:view", "assistant:create"],
+            viewer: ["assistant:view", "assistant:create"],
         },
     },
 ];

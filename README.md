@@ -101,7 +101,7 @@ test/
 
 ## 🔐 Roles & Permissions
 
-Permissions are `"<resource>:<action>"` codes: resources `products`, `orders`, `users`, `roles`, `customers`, `settings` × actions `view`, `create`, `edit`, `delete`.
+Permissions are `"<resource>:<action>"` codes: resources `products`, `orders`, `users`, `roles`, `customers`, `settings`, `assistant` × actions `view`, `create`, `edit`, `delete`.
 
 | Role | Default permissions |
 |---|---|
@@ -111,6 +111,7 @@ Permissions are `"<resource>:<action>"` codes: resources `products`, `orders`, `
 | `customer` | none: a buyer referenced by orders. Signs in to the customer portal only |
 
 - `settings:*` (e.g. order-service's order number prefix) is **admin only** by default.
+- `assistant:view` and `assistant:create` (the dashboard's Asistente, served by assistant-service) go to operator and viewer as well as admin. Each user only sees their own conversations.
 - Admins can create custom roles and change any non-admin role's permissions from the dashboard's Roles screen.
 - Guardrails (409): the last active admin can't be demoted, deactivated or deleted; system roles can't be deleted or deactivated; a role with users can't be deleted or deactivated.
 - Public registration (the customer portal) always creates a `customer`, whatever the body says. Staff accounts are created by an admin through `/user`.

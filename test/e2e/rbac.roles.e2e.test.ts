@@ -53,10 +53,10 @@ describe("RBAC: /api/v1/roles and /api/v1/permissions", () => {
         expect((await request(app).patch(`/api/v1/roles/${custom.id}`).set(bearer(user.token)).send({ name: "x" })).status).toBe(403);
     });
 
-    it("GET /permissions is matrix-ready: 4 actions × 6 resources in order", async () => {
+    it("GET /permissions is matrix-ready: 4 actions × 7 resources in order", async () => {
         const { body } = await request(app).get("/api/v1/permissions").set(bearer(admin));
         expect(body.actions.map((a: { key: string }) => a.key)).toEqual(["view", "create", "edit", "delete"]);
-        expect(body.resources.map((r: { key: string }) => r.key)).toEqual(["products", "orders", "users", "roles", "customers", "settings"]);
+        expect(body.resources.map((r: { key: string }) => r.key)).toEqual(["products", "orders", "users", "roles", "customers", "settings", "assistant"]);
         expect(body.resources[2]).toMatchObject({ key: "users", name: "Users", sortOrder: 30 });
         expect(body.resources[2].permissions.map((p: { code: string }) => p.code)).toEqual(["users:view", "users:create", "users:edit", "users:delete"]);
         expect(body.resources[2].permissions[0]).toEqual({ id: expect.any(String), code: "users:view", actionId: body.actions[0].id, actionKey: "view" });
@@ -68,8 +68,8 @@ describe("RBAC: /api/v1/roles and /api/v1/permissions", () => {
         expect(body.map((r: { key: string }) => r.key)).toEqual(["admin", "customer", "operator", "viewer", "bodeguero"]);
         expect(body[1]).toMatchObject({ key: "customer", name: "Customer", isSystem: true, permissionIds: [] });
         expect(body[2]).toMatchObject({ key: "operator", name: "Operator", isSystem: true, isActive: true, userCount: 1 });
-        expect(body[2].permissionIds).toHaveLength(9);
-        expect(body[0].permissionIds).toHaveLength(24);
+        expect(body[2].permissionIds).toHaveLength(11);
+        expect(body[0].permissionIds).toHaveLength(28);
         expect((await request(app).get("/api/v1/roles?search=bode").set(bearer(admin))).body.map((r: { key: string }) => r.key)).toEqual(["bodeguero"]);
         expect((await request(app).get("/api/v1/roles?isActive=false").set(bearer(admin))).body).toEqual([]);
     });
